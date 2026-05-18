@@ -432,7 +432,7 @@ function calcHedge(modal, P0, range_up, range_down, trigger) {
   const N1 = -lp_loss * Pt1 / (Pt1 - Pa);
   const loss_rate = x_at_Pa - N1/Pt1;
   const N2 = loss_rate * Pt2;
-  return { Pa, Pb, Pt1, Pt2, N1, N2, collat: (N1+N2)/10 };
+  return { Pa, Pb, Pt1, Pt2, N1, N2, L, collat: (N1+N2)/10 };
 }
 
 // ── Price fetcher ──
