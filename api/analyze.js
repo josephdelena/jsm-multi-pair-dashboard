@@ -12,9 +12,12 @@ const PAIR_CONFIG = {
 const MODEL = 'claude-haiku-4-5-20251001';
 
 async function fetchKlines(symbol, interval, limit) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const url = `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
   const r = await fetch(url);
   const raw = await r.json();
+  if (!Array.isArray(raw)) {
+    throw new Error(`Binance ${symbol} ${interval}: ${JSON.stringify(raw).slice(0, 200)}`);
+  }
   return raw.map(c => ({
     time: new Date(c[0]).toISOString(),
     open: parseFloat(c[1]), high: parseFloat(c[2]),
@@ -24,7 +27,7 @@ async function fetchKlines(symbol, interval, limit) {
 }
 
 async function fetchTicker(symbol) {
-  const url = `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`;
+  const url = `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${symbol}`;
   const r = await fetch(url);
   return await r.json();
 }
