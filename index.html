@@ -696,19 +696,49 @@ function showAnalysis(key) {
       </div>
     </div>
 
+    ${(() => {
+      // Calculate LP Range from entry zone center
+      let lpRangeStr = '—', entryMid = null;
+      if (a.entry_zone) {
+        const parts = a.entry_zone.match(/[\d.]+/g);
+        if (parts && parts.length >= 2) {
+          entryMid = (parseFloat(parts[0]) + parseFloat(parts[1])) / 2;
+        }
+      }
+      if (!entryMid) entryMid = a.indicators.price;
+      const Pa = entryMid * (1 - cfg.range_down/100);
+      const Pb = entryMid * (1 + cfg.range_up/100);
+      const decs = entryMid < 10 ? 4 : 2;
+      lpRangeStr = `$${Pa.toFixed(decs)} – $${Pb.toFixed(decs)} (${cfg.range_up}/${cfg.range_down}%)`;
+      const targetReturn = a.verdict === 'DEPLOY' ? '+0.5%' : a.verdict === 'STANDBY' ? '+0.3%' : '—';
+      const decsFmt = a.indicators.price < 10 ? 4 : 2;
+
+      return `
+      <div style="background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:12px; margin-bottom:10px">
+        <div style="font-size:11px; color:#6b7280; letter-spacing:0.05em; margin-bottom:8px">SETUP LP</div>
+        <table style="width:100%; font-size:12px; font-family:monospace">
+          <tr><td style="color:#9ca3af; padding:3px 0">Target Return:</td><td style="text-align:right; color:#6ee7b7; padding:3px 0">${targetReturn}</td></tr>
+          <tr><td style="color:#9ca3af; padding:3px 0">Entry Zone:</td><td style="text-align:right; color:#6ee7b7; padding:3px 0">${a.entry_zone || '—'}</td></tr>
+          <tr><td style="color:#9ca3af; padding:3px 0">LP Range:</td><td style="text-align:right; color:#6ee7b7; padding:3px 0">${lpRangeStr}</td></tr>
+          <tr><td style="color:#9ca3af; padding:3px 0">Pivot Point:</td><td style="text-align:right; color:#60a5fa; padding:3px 0">$${a.indicators.pivot ? a.indicators.pivot.toFixed(decs) : '—'}</td></tr>
+          <tr><td style="color:#9ca3af; padding:3px 0">R1 / S1:</td><td style="text-align:right; padding:3px 0"><span style="color:#6ee7b7">$${a.indicators.r1 ? a.indicators.r1.toFixed(decs) : '—'}</span> / <span style="color:#f87171">$${a.indicators.s1 ? a.indicators.s1.toFixed(decs) : '—'}</span></td></tr>
+        </table>
+      </div>
+
     <div style="background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:12px; margin-bottom:10px">
       <div style="font-size:11px; color:#6b7280; letter-spacing:0.05em; margin-bottom:6px">INDICATORS (1H)</div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px; font-family:monospace">
-        <div>Price: <span style="color:#fbbf24">$${a.indicators.price.toFixed(a.indicators.price<10?4:2)}</span></div>
+        <div>Price: <span style="color:#fbbf24">$${a.indicators.price.toFixed(decsFmt)}</span></div>
         <div>RSI: <span style="color:${a.indicators.rsi>70?'#f87171':a.indicators.rsi<30?'#f87171':'#e2e8f0'}">${a.indicators.rsi.toFixed(1)}</span></div>
         <div>ATR%: <span>${a.indicators.atr_pct.toFixed(2)}%</span></div>
         <div>Trend: <span style="color:${a.indicators.trend==='UP'?'#6ee7b7':a.indicators.trend==='DOWN'?'#f87171':'#fbbf24'}">${a.indicators.trend}</span></div>
         <div>MA30 dev: <span style="color:${Math.abs(a.indicators.ma30_dev)>5?'#f87171':'#e2e8f0'}">${a.indicators.ma30_dev.toFixed(2)}%</span></div>
         <div>Last6 range: <span style="color:${a.indicators.last6_range_pct>3?'#f87171':'#e2e8f0'}">${a.indicators.last6_range_pct.toFixed(2)}%</span></div>
         <div>Cum drop 18: <span style="color:${a.indicators.cum_drop_18>2?'#f87171':'#e2e8f0'}">${a.indicators.cum_drop_18.toFixed(2)}%</span></div>
-        <div>Entry zone: <span style="color:#6ee7b7">${a.entry_zone || '—'}</span></div>
+        <div>Volatility: <span style="color:${a.indicators.atr_pct>1.5?'#f87171':a.indicators.atr_pct<0.3?'#fbbf24':'#6ee7b7'}">${a.indicators.atr_pct<0.5?'LOW':a.indicators.atr_pct<1?'MEDIUM':a.indicators.atr_pct<2?'HIGH':'EXTREME'}</span></div>
       </div>
-    </div>
+    </div>`;
+    })()}
 
     ${kondisiRows ? `
     <div style="background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:12px; margin-bottom:10px">

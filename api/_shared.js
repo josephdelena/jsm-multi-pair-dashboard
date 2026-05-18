@@ -219,6 +219,7 @@ async function analyzePair(pairKey, apiKey) {
       price: i1h.price, rsi: i1h.rsi, atr_pct: i1h.atrPct,
       ma30_dev: i1h.ma30Dev, cum_drop_18: i1h.cumDrop18,
       last6_range_pct: i1h.last6RangePct,
+      pivot: i1h.pivot, r1: i1h.r1, s1: i1h.s1,
       trend: i1h.isUp ? 'UP' : i1h.isDown ? 'DOWN' : 'SIDEWAYS'
     },
     analysis: parsed,
