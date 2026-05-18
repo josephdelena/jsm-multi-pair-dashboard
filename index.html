@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSM Multi-Pair LP Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
+    background: #0a0e1a;
+    color: #d0d8e0;
+    padding: 20px;
+    min-height: 100vh;
+    font-size: 13px;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+
+  /* Header */
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; margin-bottom: 16px;
+    background: #131826; border: 1px solid #1f2638; border-radius: 8px;
+  }
+  .header h1 { font-size: 14px; letter-spacing: 0.05em; color: #6ee7b7; }
+  .header .meta { color: #6b7280; font-size: 11px; }
+
+  /* Portfolio Summary */
+  .summary {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 18px;
+  }
+  .stat {
+    background: #131826; border: 1px solid #1f2638; border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .stat-label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .stat-value { font-size: 20px; font-weight: 600; color: #e2e8f0; }
+  .stat-sub { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+  .pos { color: #6ee7b7; }
+  .neg { color: #f87171; }
+  .neu { color: #fbbf24; }
+
+  /* Pair Cards Grid */
+  .pairs {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 900px) {
+    .pairs { grid-template-columns: 1fr; }
+    .summary { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .card {
+    background: #131826; border: 1px solid #1f2638; border-radius: 8px;
+    padding: 16px;
+  }
+  .card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+  }
+  .pair-name { font-size: 15px; font-weight: 600; color: #e2e8f0; }
+  .pair-price { font-size: 18px; font-weight: 600; color: #fbbf24; font-family: monospace; }
+  .pair-change { font-size: 11px; margin-left: 6px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; letter-spacing: 0.05em; font-weight: 600;
+  }
+  .b-idle { background: #1e293b; color: #94a3b8; }
+  .b-deployed { background: #064e3b; color: #6ee7b7; }
+  .b-hedged { background: #78350f; color: #fbbf24; }
+  .b-whip { background: #7f1d1d; color: #fca5a5; }
+
+  /* Range visual */
+  .range-row {
+    margin: 10px 0;
+    font-size: 11px;
+  }
+  .range-bar {
+    position: relative; height: 6px; background: #1e293b; border-radius: 3px;
+    margin: 6px 0;
+  }
+  .range-fill {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: linear-gradient(90deg, #6ee7b7 0%, #4ade80 100%);
+    border-radius: 3px;
+  }
+  .range-marker {
+    position: absolute; top: -4px; width: 2px; height: 14px;
+    background: #fbbf24;
+  }
+  .range-labels {
+    display: flex; justify-content: space-between;
+    font-family: monospace; color: #6b7280; font-size: 10px;
+  }
+
+  /* Hedge info */
+  .hedge-info {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    margin: 10px 0; font-size: 11px;
+  }
+  .hedge-box {
+    background: #0f1422; border: 1px solid #1f2638; border-radius: 6px;
+    padding: 8px;
+  }
+  .hedge-label { color: #6b7280; font-size: 10px; }
+  .hedge-val { font-family: monospace; color: #e2e8f0; font-size: 12px; margin-top: 2px; }
+
+  /* Card P&L */
+  .pnl-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 10px; border-top: 1px solid #1f2638; margin-top: 10px;
+  }
+  .pnl-label { color: #6b7280; font-size: 11px; }
+  .pnl-val { font-family: monospace; font-size: 14px; font-weight: 600; }
+
+  /* Buttons */
+  .actions {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    margin-top: 10px;
+  }
+  .btn {
+    padding: 8px; border: 1px solid #1f2638; background: #0f1422;
+    color: #d0d8e0; border-radius: 4px; cursor: pointer; font-size: 11px;
+    letter-spacing: 0.05em; transition: all 0.15s;
+  }
+  .btn:hover { background: #1e293b; border-color: #6ee7b7; color: #6ee7b7; }
+  .btn.primary { background: #064e3b; color: #6ee7b7; border-color: #065f46; }
+  .btn.danger { background: #7f1d1d; color: #fca5a5; border-color: #991b1b; }
+  .btn.primary:hover { background: #065f46; }
+  .btn.danger:hover { background: #991b1b; }
+
+  /* Calculator */
+  .calc {
+    background: #131826; border: 1px solid #1f2638; border-radius: 8px;
+    padding: 18px;
+  }
+  .calc-title {
+    font-size: 12px; color: #6ee7b7; letter-spacing: 0.05em;
+    text-transform: uppercase; margin-bottom: 14px;
+    cursor: pointer; user-select: none;
+  }
+  .calc-body { display: none; }
+  .calc.open .calc-body { display: block; }
+  .calc-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 14px;
+  }
+  .calc-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #9ca3af; }
+  .calc-grid input, .calc-grid select {
+    padding: 8px; background: #0f1422; border: 1px solid #1f2638;
+    color: #e2e8f0; border-radius: 4px; font-family: monospace;
+  }
+  .calc-output {
+    background: #0f1422; border: 1px solid #1f2638; border-radius: 6px;
+    padding: 14px;
+  }
+  .calc-output table { width: 100%; font-size: 12px; font-family: monospace; }
+  .calc-output td { padding: 4px 8px; }
+  .calc-output td:first-child { color: #9ca3af; }
+  .calc-output td:last-child { color: #e2e8f0; text-align: right; font-weight: 600; }
+
+  /* History */
+  .history {
+    background: #131826; border: 1px solid #1f2638; border-radius: 8px;
+    padding: 16px; margin-top: 18px;
+  }
+  .history h3 {
+    font-size: 12px; color: #6ee7b7; letter-spacing: 0.05em;
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+  .history table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: monospace; }
+  .history th { text-align: left; padding: 6px 8px; color: #6b7280; border-bottom: 1px solid #1f2638; font-weight: normal; text-transform: uppercase; font-size: 10px; }
+  .history td { padding: 6px 8px; border-bottom: 1px solid #1a1f2e; }
+  .history .empty { color: #6b7280; text-align: center; padding: 20px; }
+
+  /* Dot indicator */
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot-active { background: #6ee7b7; box-shadow: 0 0 8px #6ee7b7; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <h1>JSM MULTI-PAIR LP DASHBOARD <span class="dot dot-active"></span></h1>
+      <div class="meta">Dual Hedge Strategy • 4 Pairs • <span id="last-update">—</span></div>
+    </div>
+    <div>
+      <button class="btn" onclick="refreshPrices()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Portfolio Summary -->
+  <div class="summary">
+    <div class="stat">
+      <div class="stat-label">Total Modal</div>
+      <div class="stat-value" id="total-modal">$0</div>
+      <div class="stat-sub" id="total-modal-sub">Set per pair</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Open Positions</div>
+      <div class="stat-value" id="open-pos">0 / 4</div>
+      <div class="stat-sub" id="open-pos-sub">Idle</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Today P&L</div>
+      <div class="stat-value neu" id="today-pnl">$0.00</div>
+      <div class="stat-sub">Realized cycles</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Est. Annual</div>
+      <div class="stat-value pos">+35.5%</div>
+      <div class="stat-sub">Blended target</div>
+    </div>
+  </div>
+
+  <!-- 4 Pair Cards -->
+  <div class="pairs" id="pairs"></div>
+
+  <!-- Hedge Calculator -->
+  <div class="calc" id="calc">
+    <div class="calc-title" onclick="document.getElementById('calc').classList.toggle('open')">▸ Hedge Math Calculator</div>
+    <div class="calc-body">
+      <div class="calc-grid">
+        <label>Pair
+          <select id="calc-pair" onchange="recalcHedge()">
+            <option value="SOL">SOL/USDC (1/3, -1.1%)</option>
+            <option value="ETH">ETH/USDC (1/3, -1.1%)</option>
+            <option value="VIRTUAL">VIRTUAL/USDC (1/5, -1.1%)</option>
+            <option value="BTC">USDC/cbBTC (1/2, -0.5%)</option>
+          </select>
+        </label>
+        <label>Modal LP ($)
+          <input type="number" id="calc-modal" value="1000" oninput="recalcHedge()">
+        </label>
+        <label>Entry Price ($)
+          <input type="number" id="calc-entry" value="83.77" step="0.0001" oninput="recalcHedge()">
+        </label>
+        <label>Leverage
+          <input type="number" id="calc-lev" value="10" oninput="recalcHedge()">
+        </label>
+      </div>
+      <div class="calc-output">
+        <table id="calc-table"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="history">
+    <h3>Cycle History (Local)</h3>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Pair</th><th>Entry</th><th>Exit</th><th>Reason</th><th>P&L</th></tr>
+      </thead>
+      <tbody id="history-body">
+        <tr><td class="empty" colspan="6">Belum ada cycle. Eksekusi entry → catat manual.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+// ── Pair Configuration ──
+const PAIRS = {
+  SOL: {
+    name: 'SOL/USDC',
+    symbol: 'SOLUSDT',
+    range_up: 1.0, range_down: 3.0, trigger: 1.1,
+    pool: 'Aerodrome CL10',
+    color: '#a78bfa'
+  },
+  ETH: {
+    name: 'ETH/USDC',
+    symbol: 'ETHUSDT',
+    range_up: 1.0, range_down: 3.0, trigger: 1.1,
+    pool: 'Aerodrome CL100',
+    color: '#60a5fa'
+  },
+  VIRTUAL: {
+    name: 'VIRTUAL/USDC',
+    symbol: 'VIRTUALUSDT',
+    range_up: 1.0, range_down: 5.0, trigger: 1.1,
+    pool: 'Uniswap CL60',
+    color: '#34d399'
+  },
+  BTC: {
+    name: 'USDC/cbBTC',
+    symbol: 'BTCUSDT',
+    range_up: 1.0, range_down: 2.0, trigger: 0.5,
+    pool: 'Aerodrome CL50',
+    color: '#fbbf24'
+  }
+};
+
+// ── State ──
+const STATE_KEY = 'jsm-multi-pair-state-v1';
+let state = JSON.parse(localStorage.getItem(STATE_KEY) || '{}');
+function saveState() { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+function getPair(p) {
+  if (!state[p]) state[p] = {
+    modal: 1000, entry: null, status: 'IDLE',
+    pa: null, pb: null, pt1: null, pt2: null,
+    n1: null, n2: null, collat: null,
+    cyclePnl: 0, h1_fired: false, h2_fired: false
+  };
+  return state[p];
+}
+
+// ── Hedge math ──
+function calcHedge(modal, P0, range_up, range_down, trigger) {
+  const Pa = P0 * (1 - range_down/100);
+  const Pb = P0 * (1 + range_up/100);
+  const Pt1 = P0 * (1 - trigger/100);
+  const Pt2 = Pa;
+  const L = modal / (2*Math.sqrt(P0) - Math.sqrt(Pa) - P0/Math.sqrt(Pb));
+  const x_at_Pa = L * (1/Math.sqrt(Pa) - 1/Math.sqrt(Pb));
+  const val_at_Pa = L * (Math.sqrt(Pa) - Pa/Math.sqrt(Pb));
+  const lp_loss = val_at_Pa - modal;
+  const N1 = -lp_loss * Pt1 / (Pt1 - Pa);
+  const loss_rate = x_at_Pa - N1/Pt1;
+  const N2 = loss_rate * Pt2;
+  return { Pa, Pb, Pt1, Pt2, N1, N2, collat: (N1+N2)/10 };
+}
+
+// ── Price fetcher ──
+let prices = {};
+let priceChanges = {};
+async function fetchPrices() {
+  const symbols = Object.values(PAIRS).map(p => p.symbol);
+  try {
+    const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('binance fail');
+    const data = await res.json();
+    data.forEach(t => {
+      prices[t.symbol] = parseFloat(t.lastPrice);
+      priceChanges[t.symbol] = parseFloat(t.priceChangePercent);
+    });
+  } catch (e) {
+    console.error('Price fetch error:', e);
+  }
+  document.getElementById('last-update').textContent = new Date().toLocaleTimeString('id-ID');
+}
+
+// ── Render ──
+function fmt(v, decimals = 2) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  if (v >= 1000) return v.toLocaleString('en-US', { maximumFractionDigits: decimals });
+  if (v >= 1) return v.toFixed(decimals);
+  return v.toFixed(4);
+}
+function fmtPnl(v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  const sign = v > 0 ? '+' : '';
+  return `${sign}$${v.toFixed(2)}`;
+}
+
+function renderPair(key) {
+  const cfg = PAIRS[key];
+  const p = getPair(key);
+  const price = prices[cfg.symbol];
+  const change = priceChanges[cfg.symbol];
+
+  const hasPos = p.status !== 'IDLE' && p.entry;
+  let statusBadge = 'b-idle', statusText = 'IDLE';
+  if (p.status === 'DEPLOYED' && !p.h1_fired) { statusBadge = 'b-deployed'; statusText = 'DEPLOYED'; }
+  else if (p.status === 'DEPLOYED' && p.h1_fired && !p.h2_fired) { statusBadge = 'b-hedged'; statusText = 'H1 ARMED'; }
+  else if (p.h2_fired) { statusBadge = 'b-whip'; statusText = 'H2 ARMED'; }
+
+  // Range bar position
+  let markerPos = 50;
+  if (hasPos && price && p.pa && p.pb) {
+    markerPos = ((price - p.pa) / (p.pb - p.pa)) * 100;
+    markerPos = Math.max(0, Math.min(100, markerPos));
+  }
+
+  // Live P&L estimate (rough — based on price vs entry, no fee)
+  let livePnl = 0;
+  if (hasPos && price) {
+    if (price >= p.pb) {
+      // Tembus atas
+      livePnl = (p.modal * 0.0012); // ~+0.12%
+    } else if (price <= p.pa) {
+      // Past Pa — locked $0
+      livePnl = 0;
+    } else if (p.h1_fired && price >= p.pt1 * 1.002) {
+      // Whipsaw H1
+      livePnl = -p.modal * 0.0052;
+    } else {
+      // In range
+      livePnl = 0;
+    }
+  }
+
+  const changeColor = change >= 0 ? 'pos' : 'neg';
+  const changeStr = change !== undefined ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '';
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <span class="pair-name" style="color:${cfg.color}">${cfg.name}</span>
+          <span class="badge ${statusBadge}" style="margin-left:8px">${statusText}</span>
+        </div>
+        <div>
+          <span class="pair-price">$${price !== undefined ? fmt(price, price < 10 ? 4 : 2) : '—'}</span>
+          <span class="pair-change ${changeColor}">${changeStr}</span>
+        </div>
+      </div>
+
+      ${hasPos ? `
+        <div class="range-row">
+          <div class="range-labels">
+            <span>Pa $${fmt(p.pa, p.pa < 10 ? 4 : 2)}</span>
+            <span>Entry $${fmt(p.entry, p.entry < 10 ? 4 : 2)}</span>
+            <span>Pb $${fmt(p.pb, p.pb < 10 ? 4 : 2)}</span>
+          </div>
+          <div class="range-bar">
+            <div class="range-fill" style="width:100%; opacity:0.3"></div>
+            <div class="range-marker" style="left:${markerPos}%"></div>
+          </div>
+        </div>
+
+        <div class="hedge-info">
+          <div class="hedge-box">
+            <div class="hedge-label">Hedge 1 (Pt1 ${cfg.trigger}%)</div>
+            <div class="hedge-val">$${fmt(p.pt1, p.pt1 < 10 ? 4 : 2)} / N $${fmt(p.n1, 0)}</div>
+          </div>
+          <div class="hedge-box">
+            <div class="hedge-label">Hedge 2 (Pt2 = Pa)</div>
+            <div class="hedge-val">$${fmt(p.pt2, p.pt2 < 10 ? 4 : 2)} / N $${fmt(p.n2, 0)}</div>
+          </div>
+        </div>
+
+        <div class="pnl-row">
+          <span class="pnl-label">Cycle P&L (est)</span>
+          <span class="pnl-val ${livePnl > 0 ? 'pos' : livePnl < 0 ? 'neg' : 'neu'}">${fmtPnl(livePnl)}</span>
+        </div>
+
+        <div class="actions">
+          <button class="btn danger" onclick="closeCycle('${key}','WIN')">✓ Win Close</button>
+          <button class="btn danger" onclick="closeCycle('${key}','WHIP')">✗ Whip Close</button>
+        </div>
+      ` : `
+        <div class="range-row" style="color:#6b7280; font-size:11px; padding:14px 0; text-align:center">
+          Belum ada posisi. Modal: $${p.modal}<br>
+          ${cfg.pool} • Asym ${cfg.range_up}/${cfg.range_down}
+        </div>
+        <div class="actions">
+          <button class="btn primary" onclick="openEntry('${key}')">+ Entry Sekarang</button>
+          <button class="btn" onclick="setModal('${key}')">Edit Modal</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderAll() {
+  document.getElementById('pairs').innerHTML = Object.keys(PAIRS).map(renderPair).join('');
+  updateSummary();
+  renderHistory();
+}
+
+function updateSummary() {
+  let totalModal = 0, openCount = 0;
+  Object.keys(PAIRS).forEach(k => {
+    const p = getPair(k);
+    totalModal += p.modal;
+    if (p.status !== 'IDLE') openCount++;
+  });
+  document.getElementById('total-modal').textContent = `$${totalModal.toLocaleString()}`;
+  document.getElementById('open-pos').textContent = `${openCount} / 4`;
+  document.getElementById('open-pos-sub').textContent = openCount === 0 ? 'All idle' : `${4-openCount} idle`;
+
+  // Today PnL from history (last 24h)
+  const cutoff = Date.now() - 24*3600*1000;
+  const history = JSON.parse(localStorage.getItem('jsm-history') || '[]');
+  const todayPnl = history.filter(h => h.ts > cutoff).reduce((s, h) => s + h.pnl, 0);
+  const pnlEl = document.getElementById('today-pnl');
+  pnlEl.textContent = fmtPnl(todayPnl);
+  pnlEl.className = 'stat-value ' + (todayPnl > 0 ? 'pos' : todayPnl < 0 ? 'neg' : 'neu');
+}
+
+function renderHistory() {
+  const history = JSON.parse(localStorage.getItem('jsm-history') || '[]');
+  const body = document.getElementById('history-body');
+  if (history.length === 0) {
+    body.innerHTML = '<tr><td class="empty" colspan="6">Belum ada cycle. Eksekusi entry → catat manual.</td></tr>';
+    return;
+  }
+  body.innerHTML = history.slice(-10).reverse().map(h => `
+    <tr>
+      <td>${new Date(h.ts).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</td>
+      <td style="color:${PAIRS[h.pair]?.color || '#e2e8f0'}">${PAIRS[h.pair]?.name || h.pair}</td>
+      <td>$${fmt(h.entry, h.entry < 10 ? 4 : 2)}</td>
+      <td>$${fmt(h.exit, h.exit < 10 ? 4 : 2)}</td>
+      <td>${h.reason}</td>
+      <td class="${h.pnl > 0 ? 'pos' : h.pnl < 0 ? 'neg' : 'neu'}">${fmtPnl(h.pnl)}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Actions ──
+function openEntry(key) {
+  const cfg = PAIRS[key];
+  const price = prices[cfg.symbol];
+  if (!price) { alert('Price belum loaded'); return; }
+  const entry = parseFloat(prompt(`Entry price ${cfg.name}?\n(current: $${price})`, price));
+  if (!entry || isNaN(entry)) return;
+  const p = getPair(key);
+  const h = calcHedge(p.modal, entry, cfg.range_up, cfg.range_down, cfg.trigger);
+  p.entry = entry;
+  p.pa = h.Pa; p.pb = h.Pb; p.pt1 = h.Pt1; p.pt2 = h.Pt2;
+  p.n1 = h.N1; p.n2 = h.N2; p.collat = h.collat;
+  p.status = 'DEPLOYED';
+  p.h1_fired = false; p.h2_fired = false;
+  saveState();
+  renderAll();
+  alert(`Posisi ${cfg.name} dibuka.\n\nPa $${fmt(h.Pa,h.Pa<10?4:2)}\nPb $${fmt(h.Pb,h.Pb<10?4:2)}\nPt1 $${fmt(h.Pt1,h.Pt1<10?4:2)} N1 $${fmt(h.N1,0)}\nPt2 $${fmt(h.Pt2,h.Pt2<10?4:2)} N2 $${fmt(h.N2,0)}\nCollat $${fmt(h.collat,2)}\n\nWAJIB: pasang 4 conditional order di Hyperliquid sekarang.`);
+}
+
+function setModal(key) {
+  const p = getPair(key);
+  const m = parseFloat(prompt(`Modal LP untuk ${PAIRS[key].name} ($)?`, p.modal));
+  if (m && !isNaN(m) && m > 0) {
+    p.modal = m;
+    saveState();
+    renderAll();
+  }
+}
+
+function closeCycle(key, reasonShort) {
+  const cfg = PAIRS[key];
+  const p = getPair(key);
+  if (!p.entry) return;
+  const price = prices[cfg.symbol] || p.entry;
+  const exit = parseFloat(prompt(`Exit price?`, price));
+  if (!exit || isNaN(exit)) return;
+  const pnlRaw = prompt(`P&L USD aktual (boleh negative)?\nDefault est: ${reasonShort==='WHIP' ? '-' : '+'}${(p.modal * (reasonShort==='WHIP' ? 0.0052 : 0.0012)).toFixed(2)}`,
+    reasonShort==='WHIP' ? (-p.modal*0.0052).toFixed(2) : (p.modal*0.0012).toFixed(2));
+  const pnl = parseFloat(pnlRaw);
+  if (isNaN(pnl)) return;
+
+  const history = JSON.parse(localStorage.getItem('jsm-history') || '[]');
+  history.push({
+    ts: Date.now(), pair: key, entry: p.entry, exit, reason: reasonShort, pnl
+  });
+  localStorage.setItem('jsm-history', JSON.stringify(history));
+
+  // Reset position
+  p.entry = null; p.pa = null; p.pb = null; p.pt1 = null; p.pt2 = null;
+  p.n1 = null; p.n2 = null; p.collat = null;
+  p.status = 'IDLE'; p.h1_fired = false; p.h2_fired = false;
+  saveState();
+  renderAll();
+}
+
+// ── Calc ──
+function recalcHedge() {
+  const key = document.getElementById('calc-pair').value;
+  const cfg = PAIRS[key];
+  const modal = parseFloat(document.getElementById('calc-modal').value) || 1000;
+  const entry = parseFloat(document.getElementById('calc-entry').value) || prices[cfg.symbol] || 100;
+  const lev = parseFloat(document.getElementById('calc-lev').value) || 10;
+  const h = calcHedge(modal, entry, cfg.range_up, cfg.range_down, cfg.trigger);
+  const decs = entry < 10 ? 4 : 2;
+  document.getElementById('calc-table').innerHTML = `
+    <tr><td>Pair</td><td>${cfg.name} (Asym ${cfg.range_up}/${cfg.range_down})</td></tr>
+    <tr><td>Pa (batas bawah, -${cfg.range_down}%)</td><td>$${fmt(h.Pa, decs)}</td></tr>
+    <tr><td>Pb (batas atas, +${cfg.range_up}%)</td><td>$${fmt(h.Pb, decs)}</td></tr>
+    <tr><td>Pt1 (trigger H1, -${cfg.trigger}%)</td><td>$${fmt(h.Pt1, decs)}</td></tr>
+    <tr><td>Pt1 Stop-Loss (×1.002)</td><td>$${fmt(h.Pt1 * 1.002, decs)}</td></tr>
+    <tr><td>Hedge 1 Notional</td><td>$${fmt(h.N1, 2)}</td></tr>
+    <tr><td>Hedge 1 Collateral (${lev}×)</td><td>$${fmt(h.N1/lev, 2)}</td></tr>
+    <tr><td>Pt2 (trigger H2 = Pa)</td><td>$${fmt(h.Pt2, decs)}</td></tr>
+    <tr><td>Pt2 Stop-Loss (×1.002)</td><td>$${fmt(h.Pt2 * 1.002, decs)}</td></tr>
+    <tr><td>Hedge 2 Notional</td><td>$${fmt(h.N2, 2)}</td></tr>
+    <tr><td>Hedge 2 Collateral (${lev}×)</td><td>$${fmt(h.N2/lev, 2)}</td></tr>
+    <tr><td><strong>Total Collateral</strong></td><td><strong>$${fmt((h.N1+h.N2)/lev, 2)}</strong></td></tr>
+    <tr><td>Buffer margin call</td><td>$20 (siapkan $${fmt((h.N1+h.N2)/lev + 20, 0)})</td></tr>
+  `;
+}
+
+// ── Init ──
+async function refreshPrices() {
+  await fetchPrices();
+  // Auto-fill calc entry with current price
+  const key = document.getElementById('calc-pair').value;
+  const price = prices[PAIRS[key].symbol];
+  if (price) document.getElementById('calc-entry').value = price;
+  renderAll();
+  recalcHedge();
+}
+
+(async () => {
+  await refreshPrices();
+  setInterval(refreshPrices, 30000); // refresh tiap 30 detik
+})();
+</script>
+</body>
+</html>
