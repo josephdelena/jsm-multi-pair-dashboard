@@ -189,7 +189,8 @@
       <h1>JSM MULTI-PAIR LP DASHBOARD <span class="dot dot-active"></span></h1>
       <div class="meta">Dual Hedge Strategy • 4 Pairs • <span id="last-update">—</span></div>
     </div>
-    <div>
+    <div style="display:flex; gap:8px">
+      <button class="btn" onclick="setApiKey()">🔑 API Key</button>
       <button class="btn" onclick="refreshPrices()">↻ Refresh</button>
     </div>
   </div>
@@ -247,6 +248,17 @@
       <div class="calc-output">
         <table id="calc-table"></table>
       </div>
+    </div>
+  </div>
+
+  <!-- Analysis Modal -->
+  <div id="analysis-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:20px; max-width:540px; width:90%; max-height:80vh; overflow-y:auto" onclick="event.stopPropagation()">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+        <h3 style="color:#6ee7b7; font-size:14px; letter-spacing:0.05em" id="modal-title">Analisa</h3>
+        <button class="btn" onclick="document.getElementById('analysis-modal').style.display='none'">✕</button>
+      </div>
+      <div id="modal-body"></div>
     </div>
   </div>
 
@@ -452,9 +464,19 @@ function renderPair(key) {
           Belum ada posisi. Modal: $${p.modal}<br>
           ${cfg.pool} • Asym ${cfg.range_up}/${cfg.range_down}
         </div>
-        <div class="actions">
-          <button class="btn primary" onclick="openEntry('${key}')">+ Entry Sekarang</button>
-          <button class="btn" onclick="setModal('${key}')">Edit Modal</button>
+        ${p.lastAnalysis ? `
+          <div class="hedge-box" style="margin-bottom:10px">
+            <div class="hedge-label">Skor terakhir (${new Date(p.lastAnalysis.ts).toLocaleTimeString('id-ID')})</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px">
+              <span class="hedge-val" style="font-size:14px">${p.lastAnalysis.score} • <span class="${p.lastAnalysis.verdict==='DEPLOY'?'pos':p.lastAnalysis.verdict==='STANDBY'?'neu':'neg'}">${p.lastAnalysis.verdict}</span></span>
+              <button class="btn" style="padding:4px 8px; font-size:10px" onclick="showAnalysis('${key}')">Detail</button>
+            </div>
+          </div>
+        ` : ''}
+        <div class="actions" style="grid-template-columns: 1fr 1fr 1fr">
+          <button class="btn" onclick="analyzePair('${key}')">🤖 Analisa</button>
+          <button class="btn primary" onclick="openEntry('${key}')">+ Entry</button>
+          <button class="btn" onclick="setModal('${key}')">Modal</button>
         </div>
       `}
     </div>
@@ -585,6 +607,126 @@ function recalcHedge() {
     <tr><td><strong>Total Collateral</strong></td><td><strong>$${fmt((h.N1+h.N2)/lev, 2)}</strong></td></tr>
     <tr><td>Buffer margin call</td><td>$20 (siapkan $${fmt((h.N1+h.N2)/lev + 20, 0)})</td></tr>
   `;
+}
+
+// ── API Key Management ──
+function setApiKey() {
+  const current = localStorage.getItem('anthropic-api-key') || '';
+  const key = prompt('Anthropic API Key (sk-ant-...):\nTersimpan di browser kamu saja.', current);
+  if (key === null) return;
+  if (key && !key.startsWith('sk-ant-')) { alert('API key harus mulai dengan sk-ant-'); return; }
+  localStorage.setItem('anthropic-api-key', key);
+  alert(key ? 'API key disimpan.' : 'API key dihapus.');
+}
+
+// ── Analyze Pair ──
+async function analyzePair(key) {
+  const apiKey = localStorage.getItem('anthropic-api-key');
+  if (!apiKey) {
+    alert('Set Anthropic API Key dulu (tombol 🔑 di header).');
+    return;
+  }
+  const cfg = PAIRS[key];
+  const p = getPair(key);
+
+  // Find button & set loading state
+  const btns = document.querySelectorAll(`button[onclick="analyzePair('${key}')"]`);
+  btns.forEach(b => { b.textContent = '⏳ Analyzing...'; b.disabled = true; });
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+      body: JSON.stringify({ pair: key })
+    });
+    const data = await res.json();
+    if (data.error) {
+      alert(`Error: ${data.error}\n${data.detail || ''}`);
+      return;
+    }
+    p.lastAnalysis = {
+      ts: Date.now(),
+      score: data.analysis.score,
+      verdict: data.analysis.verdict,
+      capital_pct: data.analysis.capital_pct,
+      kondisi: data.analysis.kondisi,
+      analisa: data.analysis.analisa,
+      entry_zone: data.analysis.entry_zone,
+      no_trade_reasons: data.analysis.no_trade_reasons,
+      indicators: data.indicators
+    };
+    saveState();
+    renderAll();
+    showAnalysis(key);
+  } catch (e) {
+    alert('Network error: ' + e.message);
+  } finally {
+    btns.forEach(b => { b.textContent = '🤖 Analisa'; b.disabled = false; });
+  }
+}
+
+function showAnalysis(key) {
+  const p = getPair(key);
+  const cfg = PAIRS[key];
+  const a = p.lastAnalysis;
+  if (!a) return;
+
+  const verdictColor = a.verdict === 'DEPLOY' ? '#6ee7b7' : a.verdict === 'STANDBY' ? '#fbbf24' : '#f87171';
+  const kondisiRows = Object.entries(a.kondisi || {}).map(([k, v]) =>
+    `<tr><td style="color:#9ca3af; padding:4px 8px">${k}</td><td style="padding:4px 8px">${v.label}</td><td style="text-align:right; padding:4px 8px; font-family:monospace">${v.pts}</td></tr>`
+  ).join('');
+  const noTradeReasons = (a.no_trade_reasons || []).length > 0
+    ? `<div style="margin-top:12px; padding:10px; background:#7f1d1d22; border-left:3px solid #f87171; border-radius:4px">
+        <div style="font-size:11px; color:#f87171; margin-bottom:6px; letter-spacing:0.05em">⚠ NO_TRADE REASONS:</div>
+        ${a.no_trade_reasons.map(r => `<div style="font-size:12px; color:#fca5a5; margin:3px 0">• ${r}</div>`).join('')}
+       </div>` : '';
+
+  document.getElementById('modal-title').textContent = `${cfg.name} — Analisa`;
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex; gap:14px; margin-bottom:14px">
+      <div style="flex:1; background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:14px; text-align:center">
+        <div style="font-size:10px; color:#6b7280; letter-spacing:0.1em">SCORE</div>
+        <div style="font-size:32px; font-weight:600; color:${verdictColor}">${a.score}</div>
+        <div style="font-size:12px; color:${verdictColor}">${a.verdict}</div>
+      </div>
+      <div style="flex:1; background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:14px; text-align:center">
+        <div style="font-size:10px; color:#6b7280; letter-spacing:0.1em">CAPITAL</div>
+        <div style="font-size:32px; font-weight:600; color:#e2e8f0">${a.capital_pct}%</div>
+        <div style="font-size:12px; color:#9ca3af">$${(p.modal * a.capital_pct/100).toFixed(0)} dari $${p.modal}</div>
+      </div>
+    </div>
+
+    <div style="background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:12px; margin-bottom:10px">
+      <div style="font-size:11px; color:#6b7280; letter-spacing:0.05em; margin-bottom:6px">INDICATORS (1H)</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11px; font-family:monospace">
+        <div>Price: <span style="color:#fbbf24">$${a.indicators.price.toFixed(a.indicators.price<10?4:2)}</span></div>
+        <div>RSI: <span style="color:${a.indicators.rsi>70?'#f87171':a.indicators.rsi<30?'#f87171':'#e2e8f0'}">${a.indicators.rsi.toFixed(1)}</span></div>
+        <div>ATR%: <span>${a.indicators.atr_pct.toFixed(2)}%</span></div>
+        <div>Trend: <span style="color:${a.indicators.trend==='UP'?'#6ee7b7':a.indicators.trend==='DOWN'?'#f87171':'#fbbf24'}">${a.indicators.trend}</span></div>
+        <div>MA30 dev: <span style="color:${Math.abs(a.indicators.ma30_dev)>5?'#f87171':'#e2e8f0'}">${a.indicators.ma30_dev.toFixed(2)}%</span></div>
+        <div>Last6 range: <span style="color:${a.indicators.last6_range_pct>3?'#f87171':'#e2e8f0'}">${a.indicators.last6_range_pct.toFixed(2)}%</span></div>
+        <div>Cum drop 18: <span style="color:${a.indicators.cum_drop_18>2?'#f87171':'#e2e8f0'}">${a.indicators.cum_drop_18.toFixed(2)}%</span></div>
+        <div>Entry zone: <span style="color:#6ee7b7">${a.entry_zone || '—'}</span></div>
+      </div>
+    </div>
+
+    ${kondisiRows ? `
+    <div style="background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:12px; margin-bottom:10px">
+      <div style="font-size:11px; color:#6b7280; letter-spacing:0.05em; margin-bottom:6px">SCORING BREAKDOWN</div>
+      <table style="width:100%; font-size:12px">${kondisiRows}</table>
+    </div>` : ''}
+
+    ${noTradeReasons}
+
+    <div style="background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:12px; font-size:12px; color:#d0d8e0; line-height:1.5; margin-top:10px">
+      ${a.analisa || ''}
+    </div>
+
+    <div style="margin-top:12px; font-size:10px; color:#6b7280; text-align:right">
+      Updated: ${new Date(a.ts).toLocaleString('id-ID')}
+    </div>
+  `;
+  document.getElementById('analysis-modal').style.display = 'flex';
 }
 
 // ── Init ──
