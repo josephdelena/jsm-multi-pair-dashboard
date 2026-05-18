@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSM Dual Hedge Calculator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
+    background: #0a0e1a;
+    color: #d0d8e0;
+    padding: 24px 16px;
+    min-height: 100vh;
+    font-size: 13px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 16px; color: #6ee7b7; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; }
+  .sub { color: #6b7280; font-size: 11px; margin-bottom: 20px; }
+  .back { display: inline-block; color: #6b7280; font-size: 11px; text-decoration: none; margin-bottom: 10px; }
+  .back:hover { color: #6ee7b7; }
+
+  .card {
+    background: #131826; border: 1px solid #1f2638;
+    border-radius: 8px; padding: 18px; margin-bottom: 14px;
+  }
+  .card h2 {
+    font-size: 11px; color: #6ee7b7; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+
+  /* Inputs */
+  .inputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 600px) { .inputs { grid-template-columns: 1fr 1fr; } }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 10px; color: #9ca3af; letter-spacing: 0.05em; text-transform: uppercase; }
+  .field input, .field select {
+    padding: 10px; background: #0f1422; border: 1px solid #1f2638;
+    color: #e2e8f0; border-radius: 4px; font-family: monospace; font-size: 14px;
+  }
+  .field input:focus, .field select:focus {
+    outline: none; border-color: #6ee7b7;
+  }
+
+  /* Output table */
+  table { width: 100%; font-family: monospace; }
+  td { padding: 7px 10px; border-bottom: 1px solid #1a1f2e; }
+  td:first-child { color: #9ca3af; font-size: 11px; }
+  td:last-child { text-align: right; color: #e2e8f0; font-weight: 600; font-size: 14px; }
+  tr:last-child td { border-bottom: none; }
+
+  .highlight td { color: #fbbf24 !important; }
+  .green td:last-child { color: #6ee7b7 !important; }
+  .red td:last-child { color: #f87171 !important; }
+  .blue td:last-child { color: #60a5fa !important; }
+
+  .section-label {
+    grid-column: 1 / -1;
+    color: #6b7280; font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 8px 10px 4px;
+  }
+
+  .pred-row td {
+    padding: 10px;
+    border: none;
+  }
+  .pred-row {
+    background: #0f1422; border-radius: 6px;
+  }
+  .pred-row + .pred-row { margin-top: 6px; }
+
+  .pair-info {
+    background: #0f1422; border-left: 3px solid #6ee7b7;
+    padding: 10px 14px; border-radius: 4px;
+    font-size: 12px; color: #9ca3af; margin-top: 14px;
+  }
+  .pair-info b { color: #6ee7b7; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <a class="back" href="/">← Back to Dashboard</a>
+  <h1>Dual Hedge Calculator</h1>
+  <p class="sub">Input modal + entry price → output 10 hedge params + 3 prediction skenario. No yield, no fees.</p>
+
+  <!-- INPUTS -->
+  <div class="card">
+    <h2>Input</h2>
+    <div class="inputs">
+      <div class="field">
+        <label>Pair</label>
+        <select id="pair" onchange="syncPair(); calc()">
+          <option value="SOL">SOL/USDC (Asym 1/3, trigger -1.1%)</option>
+          <option value="ETH">ETH/USDC (Asym 1/3, trigger -1.1%)</option>
+          <option value="VIRTUAL">VIRTUAL/USDC (Asym 1/5, trigger -1.1%)</option>
+          <option value="BTC">USDC/cbBTC (Asym 1/2, trigger -0.5%)</option>
+          <option value="CUSTOM">Custom (manual)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Modal ($)</label>
+        <input type="number" id="modal" value="1000" oninput="calc()">
+      </div>
+      <div class="field">
+        <label>Entry Price ($)</label>
+        <input type="number" id="entry" value="83.77" step="0.0001" oninput="calc()">
+      </div>
+      <div class="field">
+        <label>Range Atas (%)</label>
+        <input type="number" id="rangeUp" value="1.0" step="0.1" oninput="calc()">
+      </div>
+      <div class="field">
+        <label>Range Bawah (%)</label>
+        <input type="number" id="rangeDown" value="3.0" step="0.1" oninput="calc()">
+      </div>
+      <div class="field">
+        <label>Trigger H1 (%)</label>
+        <input type="number" id="trigger" value="1.1" step="0.1" oninput="calc()">
+      </div>
+      <div class="field">
+        <label>Leverage</label>
+        <input type="number" id="leverage" value="10" oninput="calc()">
+      </div>
+      <div class="field">
+        <label>SL Buffer (%)</label>
+        <input type="number" id="slBuffer" value="0.2" step="0.05" oninput="calc()">
+      </div>
+    </div>
+  </div>
+
+  <!-- RANGE -->
+  <div class="card">
+    <h2>LP Range (Pa – Pb)</h2>
+    <table>
+      <tr><td>Batas Bawah (Pa)</td><td id="pa">—</td></tr>
+      <tr><td>Batas Atas (Pb)</td><td id="pb">—</td></tr>
+    </table>
+  </div>
+
+  <!-- HEDGE 1 -->
+  <div class="card">
+    <h2>Hedge 1 (Trigger Close-to-Entry)</h2>
+    <table>
+      <tr><td>Trigger Pt1 (-trigger%)</td><td id="pt1">—</td></tr>
+      <tr><td>Stop-Loss Pt1 × 1.002</td><td id="pt1sl">—</td></tr>
+      <tr><td>Notional</td><td id="n1">—</td></tr>
+      <tr><td>Collateral</td><td id="c1">—</td></tr>
+    </table>
+  </div>
+
+  <!-- HEDGE 2 -->
+  <div class="card">
+    <h2>Hedge 2 (Trigger di Pa)</h2>
+    <table>
+      <tr><td>Trigger Pt2 (= Pa)</td><td id="pt2">—</td></tr>
+      <tr><td>Stop-Loss Pt2 × 1.002</td><td id="pt2sl">—</td></tr>
+      <tr><td>Notional</td><td id="n2">—</td></tr>
+      <tr><td>Collateral</td><td id="c2">—</td></tr>
+    </table>
+  </div>
+
+  <!-- TOTAL -->
+  <div class="card">
+    <h2>Total Capital Required</h2>
+    <table>
+      <tr><td>Modal LP</td><td id="modalLP">—</td></tr>
+      <tr><td>Collateral total (H1 + H2)</td><td id="collatTotal">—</td></tr>
+      <tr><td>Buffer margin call</td><td>$20</td></tr>
+      <tr style="font-weight:600"><td style="color:#fbbf24!important">SIAPKAN</td><td id="totalReq" style="color:#fbbf24!important">—</td></tr>
+    </table>
+  </div>
+
+  <!-- PREDICTION -->
+  <div class="card">
+    <h2>Prediksi Outcome (No Yield, No Fee)</h2>
+    <table>
+      <tr class="pred-row green">
+        <td><span style="font-size:18px">↗</span> &nbsp; Keluar Atas (tembus Pb)</td>
+        <td id="outTop">—</td>
+      </tr>
+      <tr><td colspan="2" style="border:none; padding:4px"></td></tr>
+      <tr class="pred-row red">
+        <td><span style="font-size:18px">✗</span> &nbsp; Whipsaw H1 (stop-loss kena)</td>
+        <td id="outWhip">—</td>
+      </tr>
+      <tr><td colspan="2" style="border:none; padding:4px"></td></tr>
+      <tr class="pred-row">
+        <td><span style="font-size:18px">⊙</span> &nbsp; Keluar Bawah (drop apapun)</td>
+        <td id="outBot" style="color:#9ca3af">$0,00 (LOCKED)</td>
+      </tr>
+    </table>
+    <div class="pair-info" id="info">—</div>
+  </div>
+
+</div>
+
+<script>
+const PRESETS = {
+  SOL:     { rangeUp: 1.0, rangeDown: 3.0, trigger: 1.1, entryDefault: 83.77 },
+  ETH:     { rangeUp: 1.0, rangeDown: 3.0, trigger: 1.1, entryDefault: 2099 },
+  VIRTUAL: { rangeUp: 1.0, rangeDown: 5.0, trigger: 1.1, entryDefault: 0.7079 },
+  BTC:     { rangeUp: 1.0, rangeDown: 2.0, trigger: 0.5, entryDefault: 77800 }
+};
+
+function syncPair() {
+  const p = document.getElementById('pair').value;
+  if (p === 'CUSTOM') return;
+  const preset = PRESETS[p];
+  document.getElementById('rangeUp').value = preset.rangeUp;
+  document.getElementById('rangeDown').value = preset.rangeDown;
+  document.getElementById('trigger').value = preset.trigger;
+  if (parseFloat(document.getElementById('entry').value) === PRESETS.SOL.entryDefault || !document.getElementById('entry').value) {
+    document.getElementById('entry').value = preset.entryDefault;
+  }
+}
+
+function calcHedge(modal, P0, rangeUp, rangeDown, trigger) {
+  const Pa = P0 * (1 - rangeDown/100);
+  const Pb = P0 * (1 + rangeUp/100);
+  const Pt1 = P0 * (1 - trigger/100);
+  const Pt2 = Pa;
+  const L = modal / (2*Math.sqrt(P0) - Math.sqrt(Pa) - P0/Math.sqrt(Pb));
+  const x_at_Pa = L * (1/Math.sqrt(Pa) - 1/Math.sqrt(Pb));
+  const val_at_Pa = L * (Math.sqrt(Pa) - Pa/Math.sqrt(Pb));
+  const lp_loss = val_at_Pa - modal;
+  const N1 = -lp_loss * Pt1 / (Pt1 - Pa);
+  const loss_rate = x_at_Pa - N1/Pt1;
+  const N2 = loss_rate * Pt2;
+  return { Pa, Pb, Pt1, Pt2, N1, N2, L, x_at_Pa, lp_loss };
+}
+
+function lpValue(P, L, Pa, Pb) {
+  if (P >= Pb) return L * (Math.sqrt(Pb) - Math.sqrt(Pa));
+  if (P <= Pa) return L * (1/Math.sqrt(Pa) - 1/Math.sqrt(Pb)) * P;
+  return L * (2*Math.sqrt(P) - P/Math.sqrt(Pb) - Math.sqrt(Pa));
+}
+
+function fmt(v, decs) {
+  if (v === null || isNaN(v)) return '—';
+  if (decs === undefined) decs = Math.abs(v) >= 1000 ? 0 : Math.abs(v) >= 10 ? 2 : Math.abs(v) >= 1 ? 4 : 6;
+  return v.toLocaleString('en-US', { minimumFractionDigits: decs, maximumFractionDigits: decs });
+}
+
+function fmtPnl(usd, modal) {
+  const pct = usd / modal * 100;
+  const sign = usd >= 0 ? '+' : '';
+  return `${sign}$${usd.toFixed(2)} (${sign}${pct.toFixed(3)}%)`;
+}
+
+function calc() {
+  const modal = parseFloat(document.getElementById('modal').value) || 0;
+  const P0 = parseFloat(document.getElementById('entry').value) || 0;
+  const rangeUp = parseFloat(document.getElementById('rangeUp').value) || 0;
+  const rangeDown = parseFloat(document.getElementById('rangeDown').value) || 0;
+  const trigger = parseFloat(document.getElementById('trigger').value) || 0;
+  const leverage = parseFloat(document.getElementById('leverage').value) || 10;
+  const slBuf = parseFloat(document.getElementById('slBuffer').value) || 0;
+
+  if (modal <= 0 || P0 <= 0) return;
+
+  const h = calcHedge(modal, P0, rangeUp, rangeDown, trigger);
+  const decs = P0 < 10 ? 4 : P0 < 100 ? 4 : 2;
+
+  // Validate math
+  const broken = h.N2 < 0;
+  const warningEl = document.getElementById('info');
+
+  document.getElementById('pa').textContent = `$${fmt(h.Pa, decs)} (-${rangeDown}%)`;
+  document.getElementById('pb').textContent = `$${fmt(h.Pb, decs)} (+${rangeUp}%)`;
+  document.getElementById('pt1').textContent = `$${fmt(h.Pt1, decs)} (-${trigger}%)`;
+  document.getElementById('pt1sl').textContent = `$${fmt(h.Pt1 * (1 + slBuf/100), decs)}`;
+  document.getElementById('n1').textContent = `$${fmt(h.N1, 2)}`;
+  document.getElementById('c1').textContent = `$${fmt(h.N1/leverage, 2)}`;
+  document.getElementById('pt2').textContent = `$${fmt(h.Pt2, decs)} (-${rangeDown}%)`;
+  document.getElementById('pt2sl').textContent = `$${fmt(h.Pt2 * (1 + slBuf/100), decs)}`;
+  document.getElementById('n2').textContent = `$${fmt(h.N2, 2)}`;
+  document.getElementById('c2').textContent = `$${fmt(h.N2/leverage, 2)}`;
+
+  const collatTotal = (h.N1 + h.N2) / leverage;
+  document.getElementById('modalLP').textContent = `$${fmt(modal, 2)}`;
+  document.getElementById('collatTotal').textContent = `$${fmt(collatTotal, 2)}`;
+  document.getElementById('totalReq').textContent = `$${fmt(modal + collatTotal + 20, 2)}`;
+
+  // Predictions
+  // 1. Keluar atas (Pb, no whipsaw)
+  const lpAtPb = lpValue(h.Pb, h.L, h.Pa, h.Pb);
+  const pnlTop = lpAtPb - modal;
+  document.getElementById('outTop').textContent = fmtPnl(pnlTop, modal);
+
+  // 2. Whipsaw H1 (stop-loss kena = Pt1 × 1.002)
+  const Pt1_sl = h.Pt1 * (1 + slBuf/100);
+  const lpAtSL = lpValue(Pt1_sl, h.L, h.Pa, h.Pb);
+  const lpPnlWhip = lpAtSL - modal;
+  const h1PnlWhip = (h.Pt1 - Pt1_sl) * (h.N1 / h.Pt1);
+  const pnlWhip = lpPnlWhip + h1PnlWhip;
+  document.getElementById('outWhip').textContent = fmtPnl(pnlWhip, modal);
+
+  // 3. Keluar bawah (Pa, locked $0)
+  document.getElementById('outBot').textContent = h.N2 >= 0 ? '$0,00 (LOCKED ✓)' : `BROKEN: N2 negatif (gap Pa-Pt1 terlalu sempit)`;
+
+  // Warning
+  if (broken) {
+    warningEl.style.borderColor = '#f87171';
+    warningEl.style.color = '#fca5a5';
+    warningEl.innerHTML = `⚠ <b>Math broken:</b> N2 negatif. Gap Pa-Pt1 (${((h.Pt1 - h.Pa)/P0*100).toFixed(2)}%) terlalu sempit untuk trigger -${trigger}%. <br>Fix: turunkan trigger ke -0.5% atau wider range bawah.`;
+  } else {
+    const gap = ((h.Pt1 - h.Pa) / P0 * 100).toFixed(2);
+    warningEl.style.borderColor = '#6ee7b7';
+    warningEl.style.color = '#9ca3af';
+    warningEl.innerHTML = `<b>Math valid ✓</b> — Gap Pa-Pt1 = ${gap}%. H1 covers LP loss net=$0 di Pa. H2 covers gap past Pa. Drop apapun = $0 LOCKED.`;
+  }
+}
+
+syncPair();
+calc();
+</script>
+</body>
+</html>
