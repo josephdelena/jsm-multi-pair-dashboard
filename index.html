@@ -392,22 +392,36 @@ function renderPair(key) {
     markerPos = Math.max(0, Math.min(100, markerPos));
   }
 
-  // Live P&L estimate (rough — based on price vs entry, no fee)
-  let livePnl = 0;
-  if (hasPos && price) {
-    if (price >= p.pb) {
-      // Tembus atas
-      livePnl = (p.modal * 0.0012); // ~+0.12%
-    } else if (price <= p.pa) {
-      // Past Pa — locked $0
-      livePnl = 0;
-    } else if (p.h1_fired && price >= p.pt1 * 1.002) {
-      // Whipsaw H1
-      livePnl = -p.modal * 0.0052;
+  // Live P&L using V3 LP math (REAL calculation, not approximation)
+  let livePnl = 0, lpValue = 0, feeEst = 0, hedgePnl = 0;
+  if (hasPos && price && p.entry) {
+    const M = p.modal, P0 = p.entry, Pa = p.pa, Pb = p.pb;
+    const L = M / (2*Math.sqrt(P0) - Math.sqrt(Pa) - P0/Math.sqrt(Pb));
+    // V3 LP value at current price
+    if (price >= Pb) {
+      lpValue = L * (Math.sqrt(Pb) - Math.sqrt(Pa));
+    } else if (price <= Pa) {
+      lpValue = L * (1/Math.sqrt(Pa) - 1/Math.sqrt(Pb)) * price;
     } else {
-      // In range
-      livePnl = 0;
+      lpValue = L * (2*Math.sqrt(price) - price/Math.sqrt(Pb) - Math.sqrt(Pa));
     }
+    const lpPnl = lpValue - M;
+
+    // Estimated fee earned (APR × elapsed / 8760)
+    const APR_DEFAULT = { SOL: 384, ETH: 191, VIRTUAL: 555, BTC: 101 };
+    const apr = APR_DEFAULT[key] || 100;
+    const elapsedHours = p.entryTs ? (Date.now() - p.entryTs) / 3600000 : 0;
+    feeEst = M * (apr/100) * (elapsedHours / 8760);
+
+    // Hedge P&L (if hedge active)
+    if (p.h1_fired && p.n1) {
+      hedgePnl += p.n1 * (p.pt1 - price) / p.pt1;
+    }
+    if (p.h2_fired && p.n2) {
+      hedgePnl += p.n2 * (p.pt2 - price) / p.pt2;
+    }
+
+    livePnl = lpPnl + hedgePnl + feeEst;
   }
 
   const changeColor = change >= 0 ? 'pos' : 'neg';
@@ -450,9 +464,32 @@ function renderPair(key) {
           </div>
         </div>
 
-        <div class="pnl-row">
-          <span class="pnl-label">Cycle P&L (est)</span>
-          <span class="pnl-val ${livePnl > 0 ? 'pos' : livePnl < 0 ? 'neg' : 'neu'}">${fmtPnl(livePnl)}</span>
+        <div style="background:#0f1422; border:1px solid #1f2638; border-radius:6px; padding:10px; margin-top:10px">
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px">
+            <span style="color:#9ca3af">Entry / Now</span>
+            <span style="font-family:monospace">$${fmt(p.entry, p.entry<10?4:2)} → $${price ? fmt(price, price<10?4:2) : '—'}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px">
+            <span style="color:#9ca3af">Modal locked</span>
+            <span style="font-family:monospace">$${p.modal.toFixed(2)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px">
+            <span style="color:#9ca3af">LP value sekarang</span>
+            <span style="font-family:monospace ${lpValue-p.modal>=0?'pos':'neg'}">$${lpValue.toFixed(2)} (${((lpValue-p.modal)/p.modal*100).toFixed(2)}%)</span>
+          </div>
+          ${p.h1_fired || p.h2_fired ? `
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px">
+            <span style="color:#9ca3af">Hedge PnL</span>
+            <span class="${hedgePnl>=0?'pos':'neg'}" style="font-family:monospace">${fmtPnl(hedgePnl)}</span>
+          </div>` : ''}
+          <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px">
+            <span style="color:#9ca3af">Fee earned (est ${p.entryTs?Math.floor((Date.now()-p.entryTs)/3600000):0}h)</span>
+            <span class="pos" style="font-family:monospace">+$${feeEst.toFixed(2)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #1f2638; margin-top:6px">
+            <span style="color:#e2e8f0; font-weight:600; font-size:12px">NET P&L</span>
+            <span class="pnl-val ${livePnl > 0 ? 'pos' : livePnl < 0 ? 'neg' : 'neu'}">${fmtPnl(livePnl)} (${(livePnl/p.modal*100).toFixed(2)}%)</span>
+          </div>
         </div>
 
         <div class="actions">
@@ -538,6 +575,7 @@ function openEntry(key) {
   const p = getPair(key);
   const h = calcHedge(p.modal, entry, cfg.range_up, cfg.range_down, cfg.trigger);
   p.entry = entry;
+  p.entryTs = Date.now();
   p.pa = h.Pa; p.pb = h.Pb; p.pt1 = h.Pt1; p.pt2 = h.Pt2;
   p.n1 = h.N1; p.n2 = h.N2; p.collat = h.collat;
   p.status = 'DEPLOYED';
