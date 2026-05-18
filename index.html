@@ -25,6 +25,22 @@
   .header h1 { font-size: 14px; letter-spacing: 0.05em; color: #6ee7b7; }
   .header .meta { color: #6b7280; font-size: 11px; }
 
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 4px; margin-bottom: 16px;
+    border-bottom: 1px solid #1f2638;
+  }
+  .tab {
+    padding: 10px 18px; background: transparent; border: none;
+    color: #6b7280; cursor: pointer; font-size: 12px; letter-spacing: 0.05em;
+    text-transform: uppercase; transition: all 0.15s; font-family: inherit;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: #d0d8e0; }
+  .tab.active { color: #6ee7b7; border-bottom-color: #6ee7b7; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
   /* Portfolio Summary */
   .summary {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
@@ -195,6 +211,15 @@
     </div>
   </div>
 
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+    <button class="tab" data-tab="calc" onclick="switchTab('calc')">🧮 Calculator</button>
+  </div>
+
+  <!-- ── TAB: DASHBOARD ── -->
+  <div class="tab-pane active" id="tab-dashboard">
+
   <!-- Portfolio Summary -->
   <div class="summary">
     <div class="stat">
@@ -222,35 +247,6 @@
   <!-- 4 Pair Cards -->
   <div class="pairs" id="pairs"></div>
 
-  <!-- Hedge Calculator -->
-  <div class="calc" id="calc">
-    <div class="calc-title" onclick="document.getElementById('calc').classList.toggle('open')">▸ Hedge Math Calculator</div>
-    <div class="calc-body">
-      <div class="calc-grid">
-        <label>Pair
-          <select id="calc-pair" onchange="recalcHedge()">
-            <option value="SOL">SOL/USDC (1/3, -1.1%)</option>
-            <option value="ETH">ETH/USDC (1/3, -1.1%)</option>
-            <option value="VIRTUAL">VIRTUAL/USDC (1/5, -1.1%)</option>
-            <option value="BTC">USDC/cbBTC (1/2, -0.5%)</option>
-          </select>
-        </label>
-        <label>Modal LP ($)
-          <input type="number" id="calc-modal" value="1000" oninput="recalcHedge()">
-        </label>
-        <label>Entry Price ($)
-          <input type="number" id="calc-entry" value="83.77" step="0.0001" oninput="recalcHedge()">
-        </label>
-        <label>Leverage
-          <input type="number" id="calc-lev" value="10" oninput="recalcHedge()">
-        </label>
-      </div>
-      <div class="calc-output">
-        <table id="calc-table"></table>
-      </div>
-    </div>
-  </div>
-
   <!-- Analysis Modal -->
   <div id="analysis-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center" onclick="if(event.target===this)this.style.display='none'">
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:20px; max-width:540px; width:90%; max-height:80vh; overflow-y:auto" onclick="event.stopPropagation()">
@@ -275,7 +271,94 @@
     </table>
   </div>
 
-</div>
+  </div><!-- /tab-dashboard -->
+
+  <!-- ── TAB: CALCULATOR ── -->
+  <div class="tab-pane" id="tab-calc">
+    <div class="card" style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Input</div>
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px">
+        <div class="field">
+          <label>Pair</label>
+          <select id="kpair" onchange="kSyncPair(); kCalc()">
+            <option value="SOL">SOL/USDC (1/3, -1.1%)</option>
+            <option value="ETH">ETH/USDC (1/3, -1.1%)</option>
+            <option value="VIRTUAL">VIRTUAL/USDC (1/5, -1.1%)</option>
+            <option value="BTC">USDC/cbBTC (1/2, -0.5%)</option>
+            <option value="CUSTOM">Custom (manual)</option>
+          </select>
+        </div>
+        <div class="field"><label>Modal ($)</label><input type="number" id="kmodal" value="1000" oninput="kCalc()"></div>
+        <div class="field"><label>Entry Price ($)</label><input type="number" id="kentry" value="83.77" step="0.0001" oninput="kCalc()"></div>
+        <div class="field"><label>Leverage</label><input type="number" id="klev" value="10" oninput="kCalc()"></div>
+        <div class="field"><label>Range Atas (%)</label><input type="number" id="krup" value="1.0" step="0.1" oninput="kCalc()"></div>
+        <div class="field"><label>Range Bawah (%)</label><input type="number" id="krdn" value="3.0" step="0.1" oninput="kCalc()"></div>
+        <div class="field"><label>Trigger H1 (%)</label><input type="number" id="ktrig" value="1.1" step="0.1" oninput="kCalc()"></div>
+        <div class="field"><label>SL Buffer (%)</label><input type="number" id="ksl" value="0.2" step="0.05" oninput="kCalc()"></div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px">
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">LP Range</div>
+        <table style="width:100%; font-family:monospace">
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Batas Bawah (Pa)</td><td id="kpa" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Batas Atas (Pb)</td><td id="kpb" style="text-align:right; padding:6px 0">—</td></tr>
+        </table>
+      </div>
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Total Capital</div>
+        <table style="width:100%; font-family:monospace">
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Modal LP</td><td id="kmlp" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Collateral H1+H2</td><td id="kcoltot" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Buffer margin</td><td style="text-align:right; padding:6px 0">$20</td></tr>
+          <tr><td style="color:#fbbf24; padding:6px 0; font-size:11px; font-weight:600">SIAPKAN</td><td id="ktot" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px">
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Hedge 1</div>
+        <table style="width:100%; font-family:monospace">
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Trigger Pt1</td><td id="kpt1" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Stop-Loss</td><td id="kpt1sl" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Notional</td><td id="kn1" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Collateral</td><td id="kc1" style="text-align:right; padding:6px 0">—</td></tr>
+        </table>
+      </div>
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Hedge 2</div>
+        <table style="width:100%; font-family:monospace">
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Trigger Pt2 (= Pa)</td><td id="kpt2" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Stop-Loss</td><td id="kpt2sl" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Notional</td><td id="kn2" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Collateral</td><td id="kc2" style="text-align:right; padding:6px 0">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Prediksi Outcome (No Yield, No Fee)</div>
+      <div style="display:grid; gap:8px">
+        <div style="background:#0f1422; border-left:3px solid #6ee7b7; border-radius:4px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
+          <span style="color:#d0d8e0">↗ &nbsp; Keluar Atas (tembus Pb)</span>
+          <span id="kouttop" class="pos" style="font-family:monospace; font-weight:600">—</span>
+        </div>
+        <div style="background:#0f1422; border-left:3px solid #f87171; border-radius:4px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
+          <span style="color:#d0d8e0">✗ &nbsp; Whipsaw H1 (stop-loss kena)</span>
+          <span id="koutwhip" class="neg" style="font-family:monospace; font-weight:600">—</span>
+        </div>
+        <div style="background:#0f1422; border-left:3px solid #9ca3af; border-radius:4px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
+          <span style="color:#d0d8e0">⊙ &nbsp; Keluar Bawah (drop apapun)</span>
+          <span id="koutbot" style="color:#9ca3af; font-family:monospace; font-weight:600">—</span>
+        </div>
+      </div>
+      <div id="kinfo" style="background:#0f1422; border-left:3px solid #6ee7b7; padding:10px 14px; border-radius:4px; font-size:12px; color:#9ca3af; margin-top:14px">—</div>
+    </div>
+  </div><!-- /tab-calc -->
+
+</div><!-- /container -->
 
 <script>
 // ── Pair Configuration ──
@@ -650,30 +733,104 @@ function closeCycle(key, reasonShort) {
   renderAll();
 }
 
-// ── Calc ──
-function recalcHedge() {
-  const key = document.getElementById('calc-pair').value;
-  const cfg = PAIRS[key];
-  const modal = parseFloat(document.getElementById('calc-modal').value) || 1000;
-  const entry = parseFloat(document.getElementById('calc-entry').value) || prices[cfg.symbol] || 100;
-  const lev = parseFloat(document.getElementById('calc-lev').value) || 10;
-  const h = calcHedge(modal, entry, cfg.range_up, cfg.range_down, cfg.trigger);
-  const decs = entry < 10 ? 4 : 2;
-  document.getElementById('calc-table').innerHTML = `
-    <tr><td>Pair</td><td>${cfg.name} (Asym ${cfg.range_up}/${cfg.range_down})</td></tr>
-    <tr><td>Pa (batas bawah, -${cfg.range_down}%)</td><td>$${fmt(h.Pa, decs)}</td></tr>
-    <tr><td>Pb (batas atas, +${cfg.range_up}%)</td><td>$${fmt(h.Pb, decs)}</td></tr>
-    <tr><td>Pt1 (trigger H1, -${cfg.trigger}%)</td><td>$${fmt(h.Pt1, decs)}</td></tr>
-    <tr><td>Pt1 Stop-Loss (×1.002)</td><td>$${fmt(h.Pt1 * 1.002, decs)}</td></tr>
-    <tr><td>Hedge 1 Notional</td><td>$${fmt(h.N1, 2)}</td></tr>
-    <tr><td>Hedge 1 Collateral (${lev}×)</td><td>$${fmt(h.N1/lev, 2)}</td></tr>
-    <tr><td>Pt2 (trigger H2 = Pa)</td><td>$${fmt(h.Pt2, decs)}</td></tr>
-    <tr><td>Pt2 Stop-Loss (×1.002)</td><td>$${fmt(h.Pt2 * 1.002, decs)}</td></tr>
-    <tr><td>Hedge 2 Notional</td><td>$${fmt(h.N2, 2)}</td></tr>
-    <tr><td>Hedge 2 Collateral (${lev}×)</td><td>$${fmt(h.N2/lev, 2)}</td></tr>
-    <tr><td><strong>Total Collateral</strong></td><td><strong>$${fmt((h.N1+h.N2)/lev, 2)}</strong></td></tr>
-    <tr><td>Buffer margin call</td><td>$20 (siapkan $${fmt((h.N1+h.N2)/lev + 20, 0)})</td></tr>
-  `;
+// ── Tabs ──
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (name === 'calc') kCalc();
+}
+
+// ── Calculator (Tab) ──
+const KPRESETS = {
+  SOL:     { rup: 1.0, rdn: 3.0, trig: 1.1, entry: 83.77 },
+  ETH:     { rup: 1.0, rdn: 3.0, trig: 1.1, entry: 2099 },
+  VIRTUAL: { rup: 1.0, rdn: 5.0, trig: 1.1, entry: 0.7079 },
+  BTC:     { rup: 1.0, rdn: 2.0, trig: 0.5, entry: 77800 }
+};
+
+function kSyncPair() {
+  const p = document.getElementById('kpair').value;
+  if (p === 'CUSTOM') return;
+  const preset = KPRESETS[p];
+  document.getElementById('krup').value = preset.rup;
+  document.getElementById('krdn').value = preset.rdn;
+  document.getElementById('ktrig').value = preset.trig;
+  // Auto-fill entry with current price if available
+  const symbol = PAIRS[p]?.symbol;
+  if (symbol && prices[symbol]) {
+    document.getElementById('kentry').value = prices[symbol];
+  } else {
+    document.getElementById('kentry').value = preset.entry;
+  }
+}
+
+function kFmt(v, decs) {
+  if (v === null || isNaN(v)) return '—';
+  if (decs === undefined) decs = Math.abs(v) >= 1000 ? 0 : Math.abs(v) >= 10 ? 2 : Math.abs(v) >= 1 ? 4 : 6;
+  return v.toLocaleString('en-US', { minimumFractionDigits: decs, maximumFractionDigits: decs });
+}
+
+function kCalc() {
+  const modal = parseFloat(document.getElementById('kmodal').value) || 0;
+  const P0 = parseFloat(document.getElementById('kentry').value) || 0;
+  const rUp = parseFloat(document.getElementById('krup').value) || 0;
+  const rDn = parseFloat(document.getElementById('krdn').value) || 0;
+  const trig = parseFloat(document.getElementById('ktrig').value) || 0;
+  const lev = parseFloat(document.getElementById('klev').value) || 10;
+  const slBuf = parseFloat(document.getElementById('ksl').value) || 0;
+  if (modal <= 0 || P0 <= 0) return;
+
+  const h = calcHedge(modal, P0, rUp, rDn, trig);
+  const decs = P0 < 10 ? 4 : P0 < 100 ? 4 : 2;
+
+  document.getElementById('kpa').textContent = `$${kFmt(h.Pa, decs)} (-${rDn}%)`;
+  document.getElementById('kpb').textContent = `$${kFmt(h.Pb, decs)} (+${rUp}%)`;
+  document.getElementById('kpt1').textContent = `$${kFmt(h.Pt1, decs)} (-${trig}%)`;
+  document.getElementById('kpt1sl').textContent = `$${kFmt(h.Pt1 * (1 + slBuf/100), decs)}`;
+  document.getElementById('kn1').textContent = `$${kFmt(h.N1, 2)}`;
+  document.getElementById('kc1').textContent = `$${kFmt(h.N1/lev, 2)}`;
+  document.getElementById('kpt2').textContent = `$${kFmt(h.Pt2, decs)}`;
+  document.getElementById('kpt2sl').textContent = `$${kFmt(h.Pt2 * (1 + slBuf/100), decs)}`;
+  document.getElementById('kn2').textContent = `$${kFmt(h.N2, 2)}`;
+  document.getElementById('kc2').textContent = `$${kFmt(h.N2/lev, 2)}`;
+
+  const collatTotal = (h.N1 + h.N2) / lev;
+  document.getElementById('kmlp').textContent = `$${kFmt(modal, 2)}`;
+  document.getElementById('kcoltot').textContent = `$${kFmt(collatTotal, 2)}`;
+  document.getElementById('ktot').textContent = `$${kFmt(modal + collatTotal + 20, 2)}`;
+
+  // Helper for V3 LP value
+  const lpV = (P) => {
+    if (P >= h.Pb) return h.L * (Math.sqrt(h.Pb) - Math.sqrt(h.Pa));
+    if (P <= h.Pa) return h.L * (1/Math.sqrt(h.Pa) - 1/Math.sqrt(h.Pb)) * P;
+    return h.L * (2*Math.sqrt(P) - P/Math.sqrt(h.Pb) - Math.sqrt(h.Pa));
+  };
+
+  // Predictions
+  const pnlTop = lpV(h.Pb) - modal;
+  document.getElementById('kouttop').textContent = `${pnlTop>=0?'+':''}$${pnlTop.toFixed(2)} (${pnlTop>=0?'+':''}${(pnlTop/modal*100).toFixed(3)}%)`;
+
+  const Pt1_sl = h.Pt1 * (1 + slBuf/100);
+  const lpAtSL = lpV(Pt1_sl);
+  const h1PnlWhip = (h.Pt1 - Pt1_sl) * (h.N1 / h.Pt1);
+  const pnlWhip = (lpAtSL - modal) + h1PnlWhip;
+  document.getElementById('koutwhip').textContent = `${pnlWhip>=0?'+':''}$${pnlWhip.toFixed(2)} (${pnlWhip>=0?'+':''}${(pnlWhip/modal*100).toFixed(3)}%)`;
+
+  const broken = h.N2 < 0;
+  document.getElementById('koutbot').textContent = broken ? 'BROKEN (N2 negatif)' : '$0,00 (LOCKED ✓)';
+
+  // Warning
+  const infoEl = document.getElementById('kinfo');
+  const gap = ((h.Pt1 - h.Pa) / P0 * 100).toFixed(2);
+  if (broken) {
+    infoEl.style.borderLeftColor = '#f87171';
+    infoEl.style.color = '#fca5a5';
+    infoEl.innerHTML = `⚠ <b>Math broken:</b> N2 negatif. Gap Pa-Pt1 = ${gap}% terlalu sempit untuk trigger -${trig}%. <br>Fix: turunkan trigger ke -0.5% atau wider range bawah.`;
+  } else {
+    infoEl.style.borderLeftColor = '#6ee7b7';
+    infoEl.style.color = '#9ca3af';
+    infoEl.innerHTML = `<b>Math valid ✓</b> — Gap Pa-Pt1 = ${gap}%. H1 sized untuk net=$0 di Pa. H2 cover gap past Pa. Drop apapun = $0 LOCKED.`;
+  }
 }
 
 // ── NFT Position Sync (on-chain read) ──
@@ -876,12 +1033,16 @@ function showAnalysis(key) {
 // ── Init ──
 async function refreshPrices() {
   await fetchPrices();
-  // Auto-fill calc entry with current price
-  const key = document.getElementById('calc-pair').value;
-  const price = prices[PAIRS[key].symbol];
-  if (price) document.getElementById('calc-entry').value = price;
   renderAll();
-  recalcHedge();
+  // Re-sync calc entry if calc tab active
+  if (document.querySelector('.tab.active')?.dataset.tab === 'calc') {
+    const k = document.getElementById('kpair').value;
+    const symbol = PAIRS[k]?.symbol;
+    if (symbol && prices[symbol]) {
+      document.getElementById('kentry').value = prices[symbol];
+    }
+    kCalc();
+  }
 }
 
 (async () => {
