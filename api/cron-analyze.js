@@ -3,54 +3,32 @@
 
 const { PAIR_CONFIG, analyzePair } = require('./_shared');
 
-const VERDICT_EMOJI = {
-  DEPLOY: '🟢',
-  STANDBY: '🟡',
-  NO_TRADE: '🔴'
-};
+// Format per-pair Telegram message (style matches Terminal 1)
+function formatPairMessage(r) {
+  const cfg = PAIR_CONFIG[r.pair];
+  const tier = r.score >= 80
+    ? 'DEPLOY HIGH (60%)'
+    : r.score >= 75
+      ? 'DEPLOY HIGH (60%)'
+      : r.score >= 70
+        ? 'DEPLOY MODERATE (40%)'
+        : 'STANDBY (20%)';
+  const emoji = r.score >= 75 ? '🚀' : r.score >= 70 ? '✅' : '🟡';
+  const price = r.indicators.price.toFixed(r.indicators.price < 10 ? 4 : 2);
 
-const PAIR_EMOJI = {
-  SOL: '◎',
-  ETH: 'Ξ',
-  VIRTUAL: '◈',
-  BTC: '₿'
-};
-
-function formatTelegramMessage(results, errors) {
-  const now = new Date();
-  const wibTime = new Date(now.getTime() + 7 * 3600 * 1000).toISOString().slice(11, 16);
-
-  let msg = `🤖 *JSM Multi-Pair Scan* • ${wibTime} WIB\n\n`;
-
-  // Sort: DEPLOY first, STANDBY, NO_TRADE last
-  const sortOrder = { DEPLOY: 0, STANDBY: 1, NO_TRADE: 2 };
-  results.sort((a, b) => (sortOrder[a.verdict] || 9) - (sortOrder[b.verdict] || 9));
-
-  results.forEach(r => {
-    const cfg = PAIR_CONFIG[r.pair];
-    const emoji = VERDICT_EMOJI[r.verdict] || '⚪';
-    const pairIcon = PAIR_EMOJI[r.pair] || '•';
-    const price = r.indicators.price.toFixed(r.indicators.price < 10 ? 4 : 2);
-
-    msg += `${emoji} ${pairIcon} *${cfg.name}*: ${r.score} ${r.verdict}`;
-    if (r.verdict !== 'NO_TRADE') msg += ` (${r.capital_pct}%)`;
-    msg += `\n`;
-    msg += `   $${price} • RSI ${r.indicators.rsi.toFixed(0)} • ${r.indicators.trend}\n`;
-    if (r.verdict !== 'NO_TRADE') {
-      msg += `   _${r.analisa.slice(0, 120)}_\n`;
-    } else if (r.no_trade_reasons?.length) {
-      msg += `   _${r.no_trade_reasons[0]}_\n`;
-    }
-    msg += `\n`;
-  });
-
-  if (errors.length > 0) {
-    msg += `\n⚠️ Errors:\n`;
-    errors.forEach(e => msg += `• ${e.pair}: ${e.error.slice(0, 100)}\n`);
-  }
-
-  msg += `\n🔗 [Open Dashboard](https://multi-pair-dashboard.vercel.app)`;
-  return msg;
+  return [
+    `${emoji} *JSM Multi-Pair — ${cfg.name}*`,
+    `_${tier}_`,
+    '',
+    `Score: *${r.score}*`,
+    `Price: \`$${price}\``,
+    `Verdict: \`${r.verdict}\``,
+    `Trend: \`${r.indicators.trend}\` • RSI: \`${r.indicators.rsi.toFixed(0)}\``,
+    '',
+    `_${r.analisa.slice(0, 200)}_`,
+    '',
+    `🔗 [Open Dashboard](https://multi-pair-dashboard.vercel.app)`
+  ].join('\n');
 }
 
 async function sendTelegram(token, chatId, message) {
@@ -118,28 +96,34 @@ module.exports = async function handler(req, res) {
     }
   });
 
-  const message = formatTelegramMessage(results, errors);
+  // Filter actionable: score >= 70 AND verdict !== NO_TRADE
+  const actionable = results.filter(r => r.score >= 70 && r.verdict !== 'NO_TRADE');
 
-  try {
-    await sendTelegram(telegramToken, telegramChatId, message);
-  } catch (e) {
-    return res.status(500).json({
-      error: 'Telegram send failed',
-      detail: e.message,
-      analysis: results
-    });
+  // Send 1 telegram per actionable pair
+  const sentMessages = [];
+  const sendErrors = [];
+  for (const r of actionable) {
+    const msg = formatPairMessage(r);
+    try {
+      await sendTelegram(telegramToken, telegramChatId, msg);
+      sentMessages.push(r.pair);
+    } catch (e) {
+      sendErrors.push({ pair: r.pair, error: e.message });
+    }
   }
 
   const totalTokens = results.reduce((s, r) => s + (r.tokens || 0), 0);
-  const cost = (totalTokens / 1_000_000) * 1.5; // rough avg blended price
+  const cost = (totalTokens / 1_000_000) * 1.5;
 
   return res.status(200).json({
     ok: true,
     timestamp: new Date().toISOString(),
     pairs_analyzed: results.length,
-    errors: errors.length,
+    actionable_pairs: actionable.length,
+    sent: sentMessages,
+    skipped: results.filter(r => !actionable.includes(r)).map(r => `${r.pair}:${r.verdict}(${r.score})`),
+    errors: [...errors, ...sendErrors],
     total_tokens: totalTokens,
-    cost_usd: cost.toFixed(4),
-    message_preview: message.slice(0, 300)
+    cost_usd: cost.toFixed(4)
   });
 };
