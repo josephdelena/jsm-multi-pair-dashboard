@@ -279,12 +279,19 @@
 
 <script>
 // ── Pair Configuration ──
+// NPM (NonfungiblePositionManager) addresses on Base
+const NPM = {
+  UNISWAP_V3: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
+  AERODROME_SLIPSTREAM: '0x827922686190790b37229fd06084350e74485b72'
+};
+
 const PAIRS = {
   SOL: {
     name: 'SOL/USDC',
     symbol: 'SOLUSDT',
     range_up: 1.0, range_down: 3.0, trigger: 1.1,
     pool: 'Aerodrome CL10',
+    npm: NPM.AERODROME_SLIPSTREAM,
     color: '#a78bfa'
   },
   ETH: {
@@ -292,6 +299,7 @@ const PAIRS = {
     symbol: 'ETHUSDT',
     range_up: 1.0, range_down: 3.0, trigger: 1.1,
     pool: 'Aerodrome CL100',
+    npm: NPM.AERODROME_SLIPSTREAM,
     color: '#60a5fa'
   },
   VIRTUAL: {
@@ -299,6 +307,7 @@ const PAIRS = {
     symbol: 'VIRTUALUSDT',
     range_up: 1.0, range_down: 5.0, trigger: 1.1,
     pool: 'Uniswap CL60',
+    npm: NPM.UNISWAP_V3,
     color: '#34d399'
   },
   BTC: {
@@ -306,6 +315,7 @@ const PAIRS = {
     symbol: 'BTCUSDT',
     range_up: 1.0, range_down: 2.0, trigger: 0.5,
     pool: 'Aerodrome CL50',
+    npm: NPM.AERODROME_SLIPSTREAM,
     color: '#fbbf24'
   }
 };
@@ -319,7 +329,9 @@ function getPair(p) {
     modal: 1000, entry: null, status: 'IDLE',
     pa: null, pb: null, pt1: null, pt2: null,
     n1: null, n2: null, collat: null,
-    cyclePnl: 0, h1_fired: false, h2_fired: false
+    cyclePnl: 0, h1_fired: false, h2_fired: false,
+    nftTokenId: null, nftPoolAddress: null,
+    chainData: null
   };
   return state[p];
 }
@@ -492,9 +504,26 @@ function renderPair(key) {
           </div>
         </div>
 
-        <div class="actions">
-          <button class="btn danger" onclick="closeCycle('${key}','WIN')">✓ Win Close</button>
-          <button class="btn danger" onclick="closeCycle('${key}','WHIP')">✗ Whip Close</button>
+        ${p.chainData ? `
+        <div style="background:#0f1422; border:1px solid #064e3b; border-radius:6px; padding:10px; margin-top:8px; font-size:11px">
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px">
+            <span style="color:#6ee7b7">⛓ Actual (on-chain)</span>
+            <span style="color:#9ca3af">${p.chainData.inRange ? 'IN-RANGE' : 'OUT-RANGE'}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:monospace">
+            <span style="color:#9ca3af">${p.chainData.token0.symbol}:</span>
+            <span>${p.chainData.token0.amount.toFixed(4)} (fees +${p.chainData.token0.fees.toFixed(6)})</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:monospace">
+            <span style="color:#9ca3af">${p.chainData.token1.symbol}:</span>
+            <span>${p.chainData.token1.amount.toFixed(4)} (fees +${p.chainData.token1.fees.toFixed(6)})</span>
+          </div>
+        </div>
+        ` : ''}
+        <div class="actions" style="grid-template-columns:1fr 1fr 1fr">
+          <button class="btn" onclick="syncNft('${key}')">⛓ Sync NFT</button>
+          <button class="btn danger" onclick="closeCycle('${key}','WIN')">✓ Win</button>
+          <button class="btn danger" onclick="closeCycle('${key}','WHIP')">✗ Whip</button>
         </div>
       ` : `
         <div class="range-row" style="color:#6b7280; font-size:11px; padding:14px 0; text-align:center">
@@ -645,6 +674,53 @@ function recalcHedge() {
     <tr><td><strong>Total Collateral</strong></td><td><strong>$${fmt((h.N1+h.N2)/lev, 2)}</strong></td></tr>
     <tr><td>Buffer margin call</td><td>$20 (siapkan $${fmt((h.N1+h.N2)/lev + 20, 0)})</td></tr>
   `;
+}
+
+// ── NFT Position Sync (on-chain read) ──
+async function syncNft(key) {
+  const p = getPair(key);
+  const cfg = PAIRS[key];
+
+  let tokenId = p.nftTokenId;
+  let poolAddress = p.nftPoolAddress;
+
+  if (!tokenId || !poolAddress) {
+    tokenId = prompt(`NFT Position Token ID untuk ${cfg.name}?\n(Cari di vfat.io atau wallet, biasanya angka 5-7 digit)`, tokenId || '');
+    if (!tokenId) return;
+    poolAddress = prompt(`Pool Address ${cfg.name}?\n(${cfg.pool}, format 0x...)`, poolAddress || '');
+    if (!poolAddress) return;
+    p.nftTokenId = tokenId.trim();
+    p.nftPoolAddress = poolAddress.trim();
+    saveState();
+  }
+
+  const btns = document.querySelectorAll(`button[onclick="syncNft('${key}')"]`);
+  btns.forEach(b => { b.textContent = '⏳ Syncing...'; b.disabled = true; });
+
+  try {
+    const res = await fetch('/api/position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pair: key,
+        tokenId: parseInt(p.nftTokenId),
+        npmAddress: cfg.npm,
+        poolAddress: p.nftPoolAddress
+      })
+    });
+    const data = await res.json();
+    if (data.error) {
+      alert(`Error: ${data.error}\n${data.detail || ''}`);
+      return;
+    }
+    p.chainData = { ...data, syncedAt: Date.now() };
+    saveState();
+    renderAll();
+  } catch (e) {
+    alert('Network error: ' + e.message);
+  } finally {
+    btns.forEach(b => { b.textContent = '⛓ Sync NFT'; b.disabled = false; });
+  }
 }
 
 // ── API Key Management ──
