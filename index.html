@@ -1321,6 +1321,50 @@ function renderSlSummary() {
   if (el) el.innerHTML = rows;
 }
 
+// ── Silent re-sync chain data (no prompt, no alert) ──
+async function silentResyncChain(key) {
+  const p = getPair(key);
+  const cfg = PAIRS[key];
+  if (!p.nftTokenId || !p.nftPoolAddress) return;
+  try {
+    const walletAddress = localStorage.getItem('jsm-wallet');
+    const res = await fetch('/api/position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pair: key,
+        tokenId: parseInt(p.nftTokenId),
+        npmAddress: cfg.npm,
+        poolAddress: p.nftPoolAddress,
+        gaugeAddress: p.nftGaugeAddress || cfg.gauge || undefined,
+        walletAddress: walletAddress || undefined
+      })
+    });
+    const data = await res.json();
+    if (data.error) return;
+    p.chainData = { ...data, syncedAt: Date.now() };
+    if (!p.nftEntryValueUsd && data.originalDeposit && typeof data.originalDeposit.usdValue === 'number' && data.originalDeposit.usdValue > 0) {
+      p.nftEntryValueUsd = data.originalDeposit.usdValue;
+      p.nftEntryAt = Date.now();
+    }
+    saveState();
+    renderAll();
+  } catch (e) { /* silent fail */ }
+}
+
+// Auto re-sync chains every 2 minutes (for pairs with active chainData)
+async function autoResyncChains() {
+  const STALE_MS = 2 * 60 * 1000;
+  const now = Date.now();
+  for (const key of Object.keys(PAIRS)) {
+    const p = getPair(key);
+    if (p.chainData && p.nftTokenId && p.nftPoolAddress) {
+      const age = now - (p.chainData.syncedAt || 0);
+      if (age >= STALE_MS) await silentResyncChain(key);
+    }
+  }
+}
+
 // ── Init ──
 async function refreshPrices() {
   await fetchPrices();
@@ -1339,7 +1383,8 @@ async function refreshPrices() {
 
 (async () => {
   await refreshPrices();
-  setInterval(refreshPrices, 30000); // refresh tiap 30 detik
+  setInterval(refreshPrices, 30000); // refresh harga tiap 30 detik
+  setInterval(autoResyncChains, 60000); // cek chain data tiap 60 detik (resync kalau > 2 menit stale)
 })();
 </script>
 </body>
