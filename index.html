@@ -1111,8 +1111,8 @@ function renderSlSummary() {
       <tr style="border-top:1px dashed #1f2638">
         <td style="padding:8px 0; color:${cfg.color}; font-weight:600">${cfg.name}<br><span style="font-size:10px; color:#6b7280; font-weight:400">trig -${cfg.trigger}% • SL +${slBuf}%</span></td>
         <td style="text-align:right; padding:8px 0; font-family:monospace; color:#d0d8e0">$${kFmt(P0, decs)}</td>
-        <td style="text-align:right; padding:8px 0; font-family:monospace; color:#f59e0b">$${kFmt(pt1sl, decs)}<br><span style="font-size:10px; color:#6b7280">close H1</span></td>
-        <td style="text-align:right; padding:8px 0; font-family:monospace; color:#f87171">$${kFmt(pt2sl, decs)}<br><span style="font-size:10px; color:#6b7280">close H2</span></td>
+        <td style="text-align:right; padding:8px 0; font-family:monospace; color:#f59e0b">$${kFmt(pt1sl, decs)}<br><span style="font-size:10px; color:#6b7280">whipsaw H1 → close H1 + LP</span></td>
+        <td style="text-align:right; padding:8px 0; font-family:monospace; color:#f87171">$${kFmt(pt2sl, decs)}<br><span style="font-size:10px; color:#6b7280">whipsaw H2 → close H2 + LP</span></td>
       </tr>`;
   }).join('');
   const el = document.getElementById('kslsummary');
