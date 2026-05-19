@@ -746,6 +746,13 @@ function renderPair(key) {
         <div style="font-family:monospace; font-size:10px; color:#6b7280; margin-bottom:6px; word-break:break-all">
           NFT #${p.nftTokenId} • Pool ${p.nftPoolAddress ? p.nftPoolAddress.slice(0,8)+'...'+p.nftPoolAddress.slice(-4) : '—'}
         </div>
+        <div style="font-family:monospace; font-size:10px; color:#6b7280; margin-bottom:6px">
+          Mint trace: ${
+            p.chainData.originalDeposit?.error ? `<span style="color:#f87171">ERROR ${p.chainData.originalDeposit.error.slice(0,40)}</span>` :
+            (typeof p.chainData.originalDeposit?.usdValue === 'number') ? `${p.chainData.originalDeposit.mintCount}x event @ block ${p.chainData.originalDeposit.mintBlock} → $${p.chainData.originalDeposit.usdValue.toFixed(2)}` :
+            '<span style="color:#f87171">tidak ketemu (mungkin di luar range 1M block)</span>'
+          }
+        </div>
         <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
           <span style="color:#9ca3af">${p.chainData.token0.symbol}</span>
           <span>${p.chainData.token0.amount.toFixed(4)} ${usd ? `(≈$${usd.value0.toFixed(2)})` : ''}</span>
