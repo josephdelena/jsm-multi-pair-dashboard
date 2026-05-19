@@ -66,17 +66,26 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
   const eventTopic = '0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
   const tokenIdTopic = '0x' + pad(toHex(tokenId));
 
-  // Get latest block to set a recent range (avoid querying full chain)
+  // Get latest block, then try progressively wider ranges
   const latestHex = await rpcCall('eth_blockNumber', []);
   const latest = parseInt(latestHex, 16);
-  const fromBlock = '0x' + Math.max(0, latest - 1000000).toString(16); // ~23 days back at Base 2s
-
-  const logs = await rpcCall('eth_getLogs', [{
-    address: npmAddress,
-    topics: [eventTopic, tokenIdTopic],
-    fromBlock,
-    toBlock: 'latest'
-  }]);
+  const ranges = [18000]; // ~10 jam (Base ~2s/block)
+  let logs = null;
+  for (const range of ranges) {
+    const fromBlock = '0x' + Math.max(0, latest - range).toString(16);
+    try {
+      logs = await rpcCall('eth_getLogs', [{
+        address: npmAddress,
+        topics: [eventTopic, tokenIdTopic],
+        fromBlock,
+        toBlock: 'latest'
+      }]);
+      if (logs && logs.length) break;
+    } catch (e) {
+      // 413 or rate limit — try next smaller... wait, we go bigger. If small fails too, just stop.
+      if (range === ranges[0]) continue;
+    }
+  }
   if (!logs || !logs.length) return null;
 
   let totalUsd = 0, totalAmount0 = 0n, totalAmount1 = 0n;
