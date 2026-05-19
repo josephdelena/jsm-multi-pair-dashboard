@@ -1029,24 +1029,29 @@ function editNft(key) {
   renderAll();
 }
 
-// ── Re-lock entry USD value (manual override or use current chain value) ──
-function relockEntry(key) {
+// ── Re-lock entry USD value (manual override OR reset to on-chain auto) ──
+async function relockEntry(key) {
   const p = getPair(key);
   const cfg = PAIRS[key];
   const currentLocked = p.nftEntryValueUsd ? p.nftEntryValueUsd.toFixed(2) : '';
-  let suggestion = currentLocked;
-  if (p.chainData) {
-    const usd = computeNftUsd(p.chainData, key);
-    if (usd) suggestion = usd.valueTotal.toFixed(2);
-  }
+  const onChain = p.chainData?.originalDeposit?.usdValue?.toFixed(2);
   const input = prompt(
     `Modal pas masuk ${cfg.name} dalam USD?\n` +
-    `(Isi angka asli waktu kamu deposit ke pool, bukan value sekarang)\n` +
+    `• Kosongin & OK = auto dari on-chain (IncreaseLiquidity event)\n` +
+    `• Isi angka manual = pakai angka kamu\n\n` +
     `Locked sekarang: $${currentLocked || '—'}\n` +
-    `Value chain sekarang: $${suggestion}`,
-    currentLocked || suggestion
+    `On-chain mint: $${onChain || '— (sync NFT dulu)'}`,
+    currentLocked
   );
   if (input === null) return;
+  if (input.trim() === '') {
+    // Reset → trigger re-sync to auto-pick from originalDeposit
+    p.nftEntryValueUsd = null;
+    p.nftEntryAt = null;
+    saveState();
+    await syncNft(key);
+    return;
+  }
   const val = parseFloat(input);
   if (isNaN(val) || val <= 0) { alert('Angka invalid.'); return; }
   p.nftEntryValueUsd = val;
