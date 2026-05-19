@@ -1050,6 +1050,15 @@ async function syncNft(key) {
     if (!p.nftGaugeAddress && cfg.gauge) p.nftGaugeAddress = cfg.gauge;
     saveState();
   }
+  // Wallet address needed for gauge earned(address,uint256)
+  let walletAddress = localStorage.getItem('jsm-wallet');
+  if (!walletAddress && (p.nftGaugeAddress || cfg.gauge)) {
+    walletAddress = prompt('Wallet address kamu (untuk baca AERO emissions dari gauge):', '');
+    if (walletAddress) {
+      walletAddress = walletAddress.trim();
+      localStorage.setItem('jsm-wallet', walletAddress);
+    }
+  }
 
   const btns = document.querySelectorAll(`button[onclick="syncNft('${key}')"]`);
   btns.forEach(b => { b.textContent = '⏳ Syncing...'; b.disabled = true; });
@@ -1063,7 +1072,8 @@ async function syncNft(key) {
         tokenId: parseInt(p.nftTokenId),
         npmAddress: cfg.npm,
         poolAddress: p.nftPoolAddress,
-        gaugeAddress: p.nftGaugeAddress || cfg.gauge || undefined
+        gaugeAddress: p.nftGaugeAddress || cfg.gauge || undefined,
+        walletAddress: walletAddress || localStorage.getItem('jsm-wallet') || undefined
       })
     });
     const data = await res.json();

@@ -249,7 +249,7 @@ module.exports = async function handler(req, res) {
     let s=''; req.on('data', c => s += c); req.on('end', () => { try { r(JSON.parse(s)); } catch { r({}); } });
   });
 
-  const { tokenId, npmAddress, poolAddress, gaugeAddress } = body;
+  const { tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress } = body;
   if (!tokenId || !npmAddress || !poolAddress) {
     return res.status(400).json({ error: 'Required: tokenId, npmAddress, poolAddress' });
   }
@@ -288,8 +288,14 @@ module.exports = async function handler(req, res) {
     let aeroEarned = null;
     if (gaugeAddress) {
       try {
-        // earned(uint256) selector = 0x4d6ed8c4
-        const earnedData = '0x4d6ed8c4' + pad(toHex(tokenId));
+        let earnedData;
+        if (walletAddress) {
+          // earned(address,uint256) = 0x3e491d47 (Aerodrome SlipStream CLGauge)
+          earnedData = '0x3e491d47' + pad(walletAddress.replace('0x','').toLowerCase()) + pad(toHex(tokenId));
+        } else {
+          // earned(uint256) = 0x4d6ed8c4 (fallback for gauges with single-arg)
+          earnedData = '0x4d6ed8c4' + pad(toHex(tokenId));
+        }
         const earnedResult = await ethCall(gaugeAddress, earnedData);
         const earnedWei = hex2BN(earnedResult);
         aeroEarned = Number(earnedWei) / 1e18; // AERO has 18 decimals
