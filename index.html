@@ -167,6 +167,28 @@
     padding: 8px; background: #0f1422; border: 1px solid #1f2638;
     color: #e2e8f0; border-radius: 4px; font-family: monospace;
   }
+  /* Calculator tab inputs (.field) */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: #9ca3af; }
+  .field input, .field select {
+    padding: 8px 10px;
+    background: #0f1422;
+    border: 1px solid #1f2638;
+    color: #e2e8f0;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color: #6ee7b7; }
+  .field input:hover, .field select:hover { border-color: #2d3748; }
+  .field select { appearance: none; -webkit-appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='%239ca3af' d='M2 4l4 4 4-4z'/></svg>");
+    background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
+  }
+  .field input[type=number]::-webkit-inner-spin-button,
+  .field input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .calc-output {
     background: #0f1422; border: 1px solid #1f2638; border-radius: 6px;
     padding: 14px;
