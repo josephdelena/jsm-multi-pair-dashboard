@@ -680,56 +680,6 @@ function renderPair(key) {
           </div>
         </div>
 
-        ${p.chainData ? (() => {
-          const usd = computeNftUsd(p.chainData, key);
-          const entryUsd = p.nftEntryValueUsd;
-          const curUsd = usd ? usd.valueTotal : 0;
-          const feesUsd = usd ? usd.feesUsd : 0;
-          const pnlUsd = entryUsd ? (curUsd + feesUsd - entryUsd) : 0;
-          const pnlPct = entryUsd ? (pnlUsd / entryUsd * 100) : 0;
-          const pnlClass = pnlUsd > 0 ? 'pos' : pnlUsd < 0 ? 'neg' : 'neu';
-          const entryDate = p.nftEntryAt ? new Date(p.nftEntryAt).toLocaleDateString('id-ID', { day:'2-digit', month:'short' }) : '—';
-          return `
-        <div style="background:#0f1422; border:1px solid #064e3b; border-radius:6px; padding:10px; margin-top:8px; font-size:11px">
-          <div style="display:flex; justify-content:space-between; margin-bottom:6px">
-            <span style="color:#6ee7b7; font-weight:600">⛓ On-Chain Position</span>
-            <span style="color:${p.chainData.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${p.chainData.inRange ? '● IN-RANGE' : '● OUT-RANGE'}</span>
-          </div>
-          <div style="font-family:monospace; font-size:10px; color:#6b7280; margin-bottom:6px; word-break:break-all">
-            NFT #${p.nftTokenId} • Pool ${p.nftPoolAddress ? p.nftPoolAddress.slice(0,8)+'...'+p.nftPoolAddress.slice(-4) : '—'}
-          </div>
-          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-            <span style="color:#9ca3af">${p.chainData.token0.symbol}</span>
-            <span>${p.chainData.token0.amount.toFixed(4)} ${usd ? `(≈$${usd.value0.toFixed(2)})` : ''}</span>
-          </div>
-          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-            <span style="color:#9ca3af">${p.chainData.token1.symbol}</span>
-            <span>${p.chainData.token1.amount.toFixed(4)} ${usd ? `(≈$${usd.value1.toFixed(2)})` : ''}</span>
-          </div>
-          <div style="border-top:1px solid #1f2638; margin-top:6px; padding-top:6px">
-            <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-              <span style="color:#9ca3af">Entry Value <span style="color:#6b7280">(locked ${entryDate})</span></span>
-              <span style="color:#d0d8e0; font-weight:600">${entryUsd ? '$'+entryUsd.toFixed(2) : '—'}</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-              <span style="color:#9ca3af">Current Value</span>
-              <span>${usd ? '$'+curUsd.toFixed(2) : '—'}</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-              <span style="color:#9ca3af">Fees earned</span>
-              <span class="pos">+$${feesUsd.toFixed(4)}</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px dashed #1f2638; margin-top:4px">
-              <span style="color:#e2e8f0; font-weight:600; font-size:12px">PnL on-chain</span>
-              <span class="${pnlClass}" style="font-family:monospace; font-weight:700; font-size:13px">${entryUsd ? `${pnlUsd>=0?'+':''}$${pnlUsd.toFixed(2)} (${pnlUsd>=0?'+':''}${pnlPct.toFixed(2)}%)` : '— (sync dulu)'}</span>
-            </div>
-          </div>
-          <div style="margin-top:8px; display:flex; gap:6px">
-            <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="editNft('${key}')">✎ Edit NFT</button>
-            <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="relockEntry('${key}')">🔒 Re-lock entry</button>
-          </div>
-        </div>
-        `;})() : ''}
         <div class="actions" style="grid-template-columns:1fr 1fr 1fr">
           <button class="btn" onclick="syncNft('${key}')">⛓ Sync NFT</button>
           <button class="btn danger" onclick="closeCycle('${key}','WIN')">✓ Win</button>
@@ -737,7 +687,7 @@ function renderPair(key) {
         </div>
       ` : `
         <div class="range-row" style="color:#6b7280; font-size:11px; padding:14px 0; text-align:center">
-          Belum ada posisi. Modal: $${p.modal}<br>
+          Belum ada posisi LP manual. Modal preset: $${p.modal}<br>
           ${cfg.pool} • Asym ${cfg.range_up}/${cfg.range_down}
         </div>
         ${p.lastAnalysis ? `
@@ -749,12 +699,63 @@ function renderPair(key) {
             </div>
           </div>
         ` : ''}
-        <div class="actions" style="grid-template-columns: 1fr 1fr 1fr">
+        <div class="actions" style="grid-template-columns: 1fr 1fr 1fr 1fr">
           <button class="btn" onclick="analyzePair('${key}')">🤖 Analisa</button>
           <button class="btn primary" onclick="openEntry('${key}')">+ Entry</button>
           <button class="btn" onclick="setModal('${key}')">Modal</button>
+          <button class="btn" onclick="syncNft('${key}')">⛓ NFT</button>
         </div>
       `}
+      ${p.chainData ? (() => {
+        const usd = computeNftUsd(p.chainData, key);
+        const entryUsd = p.nftEntryValueUsd;
+        const curUsd = usd ? usd.valueTotal : 0;
+        const feesUsd = usd ? usd.feesUsd : 0;
+        const pnlUsd = entryUsd ? (curUsd + feesUsd - entryUsd) : 0;
+        const pnlPct = entryUsd ? (pnlUsd / entryUsd * 100) : 0;
+        const pnlClass = pnlUsd > 0 ? 'pos' : pnlUsd < 0 ? 'neg' : 'neu';
+        const entryDate = p.nftEntryAt ? new Date(p.nftEntryAt).toLocaleDateString('id-ID', { day:'2-digit', month:'short' }) : '—';
+        return `
+      <div style="background:#0f1422; border:1px solid #064e3b; border-radius:6px; padding:10px; margin-top:10px; font-size:11px">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px">
+          <span style="color:#6ee7b7; font-weight:600">⛓ On-Chain Position</span>
+          <span style="color:${p.chainData.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${p.chainData.inRange ? '● IN-RANGE' : '● OUT-RANGE'}</span>
+        </div>
+        <div style="font-family:monospace; font-size:10px; color:#6b7280; margin-bottom:6px; word-break:break-all">
+          NFT #${p.nftTokenId} • Pool ${p.nftPoolAddress ? p.nftPoolAddress.slice(0,8)+'...'+p.nftPoolAddress.slice(-4) : '—'}
+        </div>
+        <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+          <span style="color:#9ca3af">${p.chainData.token0.symbol}</span>
+          <span>${p.chainData.token0.amount.toFixed(4)} ${usd ? `(≈$${usd.value0.toFixed(2)})` : ''}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+          <span style="color:#9ca3af">${p.chainData.token1.symbol}</span>
+          <span>${p.chainData.token1.amount.toFixed(4)} ${usd ? `(≈$${usd.value1.toFixed(2)})` : ''}</span>
+        </div>
+        <div style="border-top:1px solid #1f2638; margin-top:6px; padding-top:6px">
+          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+            <span style="color:#9ca3af">Modal pas masuk <span style="color:#6b7280">(locked ${entryDate})</span></span>
+            <span style="color:#d0d8e0; font-weight:600">${entryUsd ? '$'+entryUsd.toFixed(2) : '—'}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+            <span style="color:#9ca3af">Value sekarang</span>
+            <span>${usd ? '$'+curUsd.toFixed(2) : '—'}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+            <span style="color:#9ca3af">Fee earned</span>
+            <span class="pos">+$${feesUsd.toFixed(4)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px dashed #1f2638; margin-top:4px">
+            <span style="color:#e2e8f0; font-weight:600; font-size:12px">PnL on-chain</span>
+            <span class="${pnlClass}" style="font-family:monospace; font-weight:700; font-size:13px">${entryUsd ? `${pnlUsd>=0?'+':''}$${pnlUsd.toFixed(2)} (${pnlUsd>=0?'+':''}${pnlPct.toFixed(2)}%)` : '— (sync dulu)'}</span>
+          </div>
+        </div>
+        <div style="margin-top:8px; display:flex; gap:6px">
+          <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="editNft('${key}')">✎ Edit NFT</button>
+          <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="relockEntry('${key}')">🔒 Re-lock modal</button>
+        </div>
+      </div>
+      `;})() : ''}
     </div>
   `;
 }
