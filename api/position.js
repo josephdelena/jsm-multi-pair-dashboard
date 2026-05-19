@@ -6,7 +6,13 @@
 //
 // Returns JSON with liquidity, range, current price, token amounts, uncollected fees in USD
 
-const RPC_URL = 'https://mainnet.base.org';
+const RPC_URLS = [
+  'https://base.llamarpc.com',
+  'https://base-rpc.publicnode.com',
+  'https://1rpc.io/base',
+  'https://base.drpc.org',
+  'https://mainnet.base.org'
+];
 
 // Token decimals on Base
 const TOKEN_DECIMALS = {
@@ -17,16 +23,34 @@ const TOKEN_DECIMALS = {
   VIRTUAL: 18
 };
 
-// ── RPC helpers ──
+// ── RPC helpers (with fallback chain) ──
 async function rpcCall(method, params) {
-  const r = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
-  });
-  const data = await r.json();
-  if (data.error) throw new Error(`RPC: ${data.error.message}`);
-  return data.result;
+  let lastErr;
+  for (const url of RPC_URLS) {
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+      });
+      if (!r.ok) { lastErr = new Error(`HTTP ${r.status} @ ${url}`); continue; }
+      const data = await r.json();
+      if (data.error) {
+        // Rate limit or transient — try next RPC
+        const msg = (data.error.message || '').toLowerCase();
+        if (msg.includes('rate') || msg.includes('limit') || msg.includes('too many')) {
+          lastErr = new Error(`RPC: ${data.error.message}`);
+          continue;
+        }
+        throw new Error(`RPC: ${data.error.message}`);
+      }
+      return data.result;
+    } catch (e) {
+      lastErr = e;
+      // Network error → try next
+    }
+  }
+  throw lastErr || new Error('All RPCs failed');
 }
 
 async function ethCall(to, data) {
