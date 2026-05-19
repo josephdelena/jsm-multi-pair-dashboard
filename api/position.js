@@ -196,9 +196,15 @@ function computeUncollectedFees(position, slot0, feeGrowthGlobals, tickLowerInfo
   const feeGrowthInside1X128 = (feeGrowthGlobal1X128 - feeGrowthBelow1 - feeGrowthAbove1 + MASK + MASK) % MASK;
 
   // delta × liquidity / 2^128
+  // If feeGrowthInside < feeGrowthInsideLast (e.g. fees already auto-collected by gauge),
+  // treat delta as 0 instead of wrapping to huge number.
   const Q128 = BigInt(1) << BigInt(128);
-  let delta0 = (feeGrowthInside0X128 - feeGrowthInside0LastX128 + MASK) % MASK;
-  let delta1 = (feeGrowthInside1X128 - feeGrowthInside1LastX128 + MASK) % MASK;
+  const delta0 = feeGrowthInside0X128 >= feeGrowthInside0LastX128
+    ? (feeGrowthInside0X128 - feeGrowthInside0LastX128)
+    : 0n;
+  const delta1 = feeGrowthInside1X128 >= feeGrowthInside1LastX128
+    ? (feeGrowthInside1X128 - feeGrowthInside1LastX128)
+    : 0n;
 
   const fees0 = (delta0 * liquidity) / Q128 + tokensOwed0;
   const fees1 = (delta1 * liquidity) / Q128 + tokensOwed1;
