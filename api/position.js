@@ -57,6 +57,66 @@ async function ethCall(to, data) {
   return rpcCall('eth_call', [{ to, data }, 'latest']);
 }
 
+async function ethCallAtBlock(to, data, blockTag) {
+  return rpcCall('eth_call', [{ to, data }, blockTag]);
+}
+
+// ── Read original deposit (IncreaseLiquidity events for tokenId) ──
+async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, token1Info) {
+  const eventTopic = '0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
+  const tokenIdTopic = '0x' + pad(toHex(tokenId));
+
+  // Get latest block to set a recent range (avoid querying full chain)
+  const latestHex = await rpcCall('eth_blockNumber', []);
+  const latest = parseInt(latestHex, 16);
+  const fromBlock = '0x' + Math.max(0, latest - 1000000).toString(16); // ~23 days back at Base 2s
+
+  const logs = await rpcCall('eth_getLogs', [{
+    address: npmAddress,
+    topics: [eventTopic, tokenIdTopic],
+    fromBlock,
+    toBlock: 'latest'
+  }]);
+  if (!logs || !logs.length) return null;
+
+  let totalUsd = 0, totalAmount0 = 0n, totalAmount1 = 0n;
+  let mintBlock = null;
+  const s0 = (token0Info.symbol || '').toUpperCase();
+  const s1 = (token1Info.symbol || '').toUpperCase();
+
+  for (const log of logs) {
+    const data = log.data.replace('0x', '');
+    const amount0 = hex2BN(data.slice(64, 128));
+    const amount1 = hex2BN(data.slice(128, 192));
+    totalAmount0 += amount0;
+    totalAmount1 += amount1;
+
+    const amt0H = Number(amount0) / Math.pow(10, token0Info.decimals);
+    const amt1H = Number(amount1) / Math.pow(10, token1Info.decimals);
+
+    // Pool price at this block
+    const slot0Hex = (await ethCallAtBlock(poolAddress, '0x3850c7bd', log.blockNumber)).replace('0x', '');
+    const sqrtPriceX96 = hex2BN(slot0Hex.slice(0, 64));
+    const Q96 = BigInt(2) ** BigInt(96);
+    const sqrtFloat = Number(sqrtPriceX96) / Number(Q96);
+    const priceRatio = sqrtFloat * sqrtFloat * Math.pow(10, token0Info.decimals - token1Info.decimals);
+
+    let depositUsd = 0;
+    if (s0 === 'USDC' || s0 === 'USDBC') depositUsd = amt0H + (priceRatio ? amt1H / priceRatio : 0);
+    else if (s1 === 'USDC' || s1 === 'USDBC') depositUsd = amt1H + amt0H * priceRatio;
+    totalUsd += depositUsd;
+    if (!mintBlock) mintBlock = parseInt(log.blockNumber, 16);
+  }
+
+  return {
+    amount0Total: Number(totalAmount0) / Math.pow(10, token0Info.decimals),
+    amount1Total: Number(totalAmount1) / Math.pow(10, token1Info.decimals),
+    usdValue: totalUsd,
+    mintBlock,
+    mintCount: logs.length
+  };
+}
+
 // ── ABI encoders/decoders ──
 function pad(hex, len = 64) { return hex.replace('0x', '').padStart(len, '0'); }
 function toHex(n) { return BigInt(n).toString(16); }
@@ -284,6 +344,14 @@ module.exports = async function handler(req, res) {
     const priceLower = Math.pow(1.0001, position.tickLower) * Math.pow(10, token0Info.decimals - token1Info.decimals);
     const priceUpper = Math.pow(1.0001, position.tickUpper) * Math.pow(10, token0Info.decimals - token1Info.decimals);
 
+    // Original deposit (USD value at mint time, on-chain)
+    let originalDeposit = null;
+    try {
+      originalDeposit = await getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, token1Info);
+    } catch (e) {
+      originalDeposit = { error: e.message };
+    }
+
     // Optional: gauge emissions (AERO earned for this tokenId)
     let aeroEarned = null;
     if (gaugeAddress) {
@@ -320,6 +388,7 @@ module.exports = async function handler(req, res) {
       token0: { ...token0Info, address: position.token0, amount: amount0_human, fees: fees0_human },
       token1: { ...token1Info, address: position.token1, amount: amount1_human, fees: fees1_human },
       aeroEarned,
+      originalDeposit,
       raw: {
         amount0_wei: Math.floor(amount0).toString(),
         amount1_wei: Math.floor(amount1).toString(),

@@ -1029,14 +1029,27 @@ function editNft(key) {
   renderAll();
 }
 
-// ── Re-lock entry USD value (if user reset position) ──
+// ── Re-lock entry USD value (manual override or use current chain value) ──
 function relockEntry(key) {
   const p = getPair(key);
-  if (!p.chainData) { alert('Sync NFT dulu sebelum lock entry.'); return; }
-  const usd = computeNftUsd(p.chainData, key);
-  if (!usd) { alert('Gagal hitung USD value — pastikan harga live udah loaded.'); return; }
-  if (!confirm(`Re-lock entry value ke $${usd.valueTotal.toFixed(2)}? PnL bakal di-reset.`)) return;
-  p.nftEntryValueUsd = usd.valueTotal;
+  const cfg = PAIRS[key];
+  const currentLocked = p.nftEntryValueUsd ? p.nftEntryValueUsd.toFixed(2) : '';
+  let suggestion = currentLocked;
+  if (p.chainData) {
+    const usd = computeNftUsd(p.chainData, key);
+    if (usd) suggestion = usd.valueTotal.toFixed(2);
+  }
+  const input = prompt(
+    `Modal pas masuk ${cfg.name} dalam USD?\n` +
+    `(Isi angka asli waktu kamu deposit ke pool, bukan value sekarang)\n` +
+    `Locked sekarang: $${currentLocked || '—'}\n` +
+    `Value chain sekarang: $${suggestion}`,
+    currentLocked || suggestion
+  );
+  if (input === null) return;
+  const val = parseFloat(input);
+  if (isNaN(val) || val <= 0) { alert('Angka invalid.'); return; }
+  p.nftEntryValueUsd = val;
   p.nftEntryAt = Date.now();
   saveState();
   renderAll();
@@ -1092,11 +1105,16 @@ async function syncNft(key) {
       return;
     }
     p.chainData = { ...data, syncedAt: Date.now() };
-    // Auto-lock entry USD value on first sync
-    const usd = computeNftUsd(p.chainData, key);
-    if (usd && !p.nftEntryValueUsd) {
-      p.nftEntryValueUsd = usd.valueTotal;
-      p.nftEntryAt = Date.now();
+    // Auto-lock entry USD value: prefer on-chain originalDeposit if available, else current value
+    if (!p.nftEntryValueUsd) {
+      if (data.originalDeposit && typeof data.originalDeposit.usdValue === 'number' && data.originalDeposit.usdValue > 0) {
+        p.nftEntryValueUsd = data.originalDeposit.usdValue;
+        p.nftEntryAt = data.originalDeposit.mintBlock ? Date.now() : Date.now();
+      } else {
+        const usd = computeNftUsd(p.chainData, key);
+        if (usd) p.nftEntryValueUsd = usd.valueTotal;
+        p.nftEntryAt = Date.now();
+      }
     }
     saveState();
     renderAll();
