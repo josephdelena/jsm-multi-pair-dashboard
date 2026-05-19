@@ -249,7 +249,7 @@ module.exports = async function handler(req, res) {
     let s=''; req.on('data', c => s += c); req.on('end', () => { try { r(JSON.parse(s)); } catch { r({}); } });
   });
 
-  const { tokenId, npmAddress, poolAddress } = body;
+  const { tokenId, npmAddress, poolAddress, gaugeAddress } = body;
   if (!tokenId || !npmAddress || !poolAddress) {
     return res.status(400).json({ error: 'Required: tokenId, npmAddress, poolAddress' });
   }
@@ -284,6 +284,20 @@ module.exports = async function handler(req, res) {
     const priceLower = Math.pow(1.0001, position.tickLower) * Math.pow(10, token0Info.decimals - token1Info.decimals);
     const priceUpper = Math.pow(1.0001, position.tickUpper) * Math.pow(10, token0Info.decimals - token1Info.decimals);
 
+    // Optional: gauge emissions (AERO earned for this tokenId)
+    let aeroEarned = null;
+    if (gaugeAddress) {
+      try {
+        // earned(uint256) selector = 0x4d6ed8c4
+        const earnedData = '0x4d6ed8c4' + pad(toHex(tokenId));
+        const earnedResult = await ethCall(gaugeAddress, earnedData);
+        const earnedWei = hex2BN(earnedResult);
+        aeroEarned = Number(earnedWei) / 1e18; // AERO has 18 decimals
+      } catch (e) {
+        aeroEarned = { error: e.message };
+      }
+    }
+
     return res.status(200).json({
       ok: true,
       tokenId,
@@ -299,6 +313,7 @@ module.exports = async function handler(req, res) {
       rangeUpper: priceUpper,
       token0: { ...token0Info, address: position.token0, amount: amount0_human, fees: fees0_human },
       token1: { ...token1Info, address: position.token1, amount: amount1_human, fees: fees1_human },
+      aeroEarned,
       raw: {
         amount0_wei: Math.floor(amount0).toString(),
         amount1_wei: Math.floor(amount1).toString(),

@@ -167,28 +167,6 @@
     padding: 8px; background: #0f1422; border: 1px solid #1f2638;
     color: #e2e8f0; border-radius: 4px; font-family: monospace;
   }
-  /* Calculator tab inputs (.field) */
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 11px; color: #9ca3af; }
-  .field input, .field select {
-    padding: 8px 10px;
-    background: #0f1422;
-    border: 1px solid #1f2638;
-    color: #e2e8f0;
-    border-radius: 5px;
-    font-family: monospace;
-    font-size: 13px;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-  .field input:focus, .field select:focus { border-color: #6ee7b7; }
-  .field input:hover, .field select:hover { border-color: #2d3748; }
-  .field select { appearance: none; -webkit-appearance: none; cursor: pointer;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='%239ca3af' d='M2 4l4 4 4-4z'/></svg>");
-    background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
-  }
-  .field input[type=number]::-webkit-inner-spin-button,
-  .field input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .calc-output {
     background: #0f1422; border: 1px solid #1f2638; border-radius: 6px;
     padding: 14px;
@@ -297,23 +275,6 @@
 
   <!-- ── TAB: CALCULATOR ── -->
   <div class="tab-pane" id="tab-calc">
-    <div style="background:#131826; border:1px solid #f59e0b; border-radius:8px; padding:18px; margin-bottom:14px">
-      <div style="font-size:11px; color:#f59e0b; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:4px">🎯 Harga SL untuk pasang di GMX</div>
-      <div style="font-size:10px; color:#6b7280; margin-bottom:4px">Pakai harga live sebagai entry. Modal default $1000. SL buffer 0.2%.</div>
-      <div style="font-size:11px; color:#fbbf24; background:#1f1408; border-left:3px solid #f59e0b; padding:6px 10px; border-radius:3px; margin-bottom:12px">⚠ <b>WAJIB:</b> di harga yang sama dengan SL, kamu juga harus <b>CLOSE LP bareng</b>. Jangan biarin LP jalan tanpa hedge.</div>
-      <table style="width:100%; font-size:12px; border-collapse:collapse">
-        <thead>
-          <tr style="color:#6b7280; font-size:10px; text-transform:uppercase; letter-spacing:0.05em">
-            <th style="text-align:left; padding:6px 0">Pair</th>
-            <th style="text-align:right; padding:6px 0">Harga Live</th>
-            <th style="text-align:right; padding:6px 0; color:#f59e0b">Hedge 1</th>
-            <th style="text-align:right; padding:6px 0; color:#f87171">Hedge 2</th>
-          </tr>
-        </thead>
-        <tbody id="kslsummary"></tbody>
-      </table>
-    </div>
-
     <div class="card" style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
       <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Input</div>
       <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px">
@@ -360,8 +321,8 @@
       <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
         <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Hedge 1</div>
         <table style="width:100%; font-family:monospace">
-          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Trigger Pt1 <span style="color:#6b7280">(OPEN H1)</span></td><td id="kpt1" style="text-align:right; padding:6px 0">—</td></tr>
-          <tr style="background:#1f1408"><td style="color:#f59e0b; padding:8px 6px; font-size:11px; font-weight:600">⚠ OUT kalau whipsaw H1 <span style="color:#6b7280; font-weight:400">(close H1 + LP)</span></td><td id="kpt1sl" style="text-align:right; padding:8px 6px; color:#f59e0b; font-weight:700">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Trigger Pt1</td><td id="kpt1" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Stop-Loss</td><td id="kpt1sl" style="text-align:right; padding:6px 0">—</td></tr>
           <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Notional</td><td id="kn1" style="text-align:right; padding:6px 0">—</td></tr>
           <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Collateral</td><td id="kc1" style="text-align:right; padding:6px 0">—</td></tr>
         </table>
@@ -369,8 +330,8 @@
       <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
         <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Hedge 2</div>
         <table style="width:100%; font-family:monospace">
-          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Trigger Pt2 = Pa <span style="color:#6b7280">(OPEN H2)</span></td><td id="kpt2" style="text-align:right; padding:6px 0">—</td></tr>
-          <tr style="background:#1f0a0a"><td style="color:#f87171; padding:8px 6px; font-size:11px; font-weight:600">⚠ OUT kalau whipsaw H2 <span style="color:#6b7280; font-weight:400">(close H2 + LP)</span></td><td id="kpt2sl" style="text-align:right; padding:8px 6px; color:#f87171; font-weight:700">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Trigger Pt2 (= Pa)</td><td id="kpt2" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Stop-Loss</td><td id="kpt2sl" style="text-align:right; padding:6px 0">—</td></tr>
           <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Notional</td><td id="kn2" style="text-align:right; padding:6px 0">—</td></tr>
           <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">Collateral</td><td id="kc2" style="text-align:right; padding:6px 0">—</td></tr>
         </table>
@@ -378,47 +339,18 @@
     </div>
 
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
-      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Trigger Map</div>
-      <style>
-        .kmap-row { display:flex; align-items:baseline; padding:6px 0; font-size:12px; }
-        .kmap-row .label { white-space:nowrap; }
-        .kmap-row .dots { flex:1; border-bottom:1px dotted #2a3142; margin:0 10px; transform:translateY(-3px); }
-        .kmap-row .val { font-family:monospace; white-space:nowrap; }
-      </style>
-      <div class="kmap-row"><span class="label" style="color:#6ee7b7">Pb <span style="color:#6b7280">(LP exit atas)</span></span><span class="dots"></span><span class="val" id="kmap_pb" style="color:#6ee7b7">—</span></div>
-      <div class="kmap-row" style="border-top:1px dashed #1f2638"><span class="label" style="color:#d0d8e0">P0 <span style="color:#6b7280">(entry)</span></span><span class="dots"></span><span class="val" id="kmap_p0" style="color:#d0d8e0">—</span></div>
-      <div class="kmap-row"><span class="label" style="color:#fca5a5">Pt1 SL <span style="color:#6b7280">(Whipsaw H1)</span></span><span class="dots"></span><span class="val" id="kmap_pt1sl" style="color:#fca5a5">—</span></div>
-      <div class="kmap-row"><span class="label" style="color:#f59e0b">Pt1 <span style="color:#6b7280">(H1 fire, short open)</span></span><span class="dots"></span><span class="val" id="kmap_pt1" style="color:#f59e0b">—</span></div>
-      <div class="kmap-row"><span class="label" style="color:#fca5a5">Pt2 SL <span style="color:#6b7280">(Whipsaw H2)</span></span><span class="dots"></span><span class="val" id="kmap_pt2sl" style="color:#fca5a5">—</span></div>
-      <div class="kmap-row"><span class="label" style="color:#f59e0b">Pa = Pt2 <span style="color:#6b7280">(H2 fire, LP exit bawah)</span></span><span class="dots"></span><span class="val" id="kmap_pt2" style="color:#f59e0b">—</span></div>
-    </div>
-
-    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
       <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Prediksi Outcome (No Yield, No Fee)</div>
       <div style="display:grid; gap:8px">
-        <div style="background:#0f1422; border-left:3px solid #6ee7b7; border-radius:4px; padding:10px 14px">
-          <div style="display:flex; justify-content:space-between; align-items:center">
-            <span style="color:#d0d8e0">↗ &nbsp; Keluar Atas (tembus Pb)</span>
-            <span id="kouttop" class="pos" style="font-family:monospace; font-weight:600">—</span>
-          </div>
-          <div id="kouttop_b" style="color:#6b7280; font-size:10px; margin-top:4px; font-family:monospace">—</div>
+        <div style="background:#0f1422; border-left:3px solid #6ee7b7; border-radius:4px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
+          <span style="color:#d0d8e0">↗ &nbsp; Keluar Atas (tembus Pb)</span>
+          <span id="kouttop" class="pos" style="font-family:monospace; font-weight:600">—</span>
         </div>
-        <div style="background:#0f1422; border-left:3px solid #f87171; border-radius:4px; padding:10px 14px">
-          <div style="display:flex; justify-content:space-between; align-items:center">
-            <span style="color:#d0d8e0">✗ &nbsp; Whipsaw H1 (Pt1 → Pt1 SL)</span>
-            <span id="koutwhip" class="neg" style="font-family:monospace; font-weight:600">—</span>
-          </div>
-          <div id="koutwhip_b" style="color:#6b7280; font-size:10px; margin-top:4px; font-family:monospace">—</div>
-        </div>
-        <div style="background:#0f1422; border-left:3px solid #f87171; border-radius:4px; padding:10px 14px">
-          <div style="display:flex; justify-content:space-between; align-items:center">
-            <span style="color:#d0d8e0">✗ &nbsp; Whipsaw H2 (Pa → Pt2 SL)</span>
-            <span id="koutwhip2" class="neg" style="font-family:monospace; font-weight:600">—</span>
-          </div>
-          <div id="koutwhip2_b" style="color:#6b7280; font-size:10px; margin-top:4px; font-family:monospace">—</div>
+        <div style="background:#0f1422; border-left:3px solid #f87171; border-radius:4px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
+          <span style="color:#d0d8e0">✗ &nbsp; Whipsaw H1 (stop-loss kena)</span>
+          <span id="koutwhip" class="neg" style="font-family:monospace; font-weight:600">—</span>
         </div>
         <div style="background:#0f1422; border-left:3px solid #9ca3af; border-radius:4px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center">
-          <span style="color:#d0d8e0">⊙ &nbsp; Tembus Bawah (locked di Pa)</span>
+          <span style="color:#d0d8e0">⊙ &nbsp; Keluar Bawah (drop apapun)</span>
           <span id="koutbot" style="color:#9ca3af; font-family:monospace; font-weight:600">—</span>
         </div>
       </div>
@@ -433,7 +365,7 @@
 // NPM (NonfungiblePositionManager) addresses on Base
 const NPM = {
   UNISWAP_V3: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
-  AERODROME_SLIPSTREAM: '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53'
+  AERODROME_SLIPSTREAM: '0x827922686190790b37229fd06084350e74485b72'
 };
 
 const PAIRS = {
@@ -443,7 +375,6 @@ const PAIRS = {
     range_up: 1.0, range_down: 3.0, trigger: 1.1,
     pool: 'Aerodrome CL10',
     npm: NPM.AERODROME_SLIPSTREAM,
-    gauge: '0xC58eC2d32FFA0c8c0cf5d15ceF7AE3cC70d2fa69',
     color: '#a78bfa'
   },
   ETH: {
@@ -482,35 +413,10 @@ function getPair(p) {
     pa: null, pb: null, pt1: null, pt2: null,
     n1: null, n2: null, collat: null,
     cyclePnl: 0, h1_fired: false, h2_fired: false,
-    nftTokenId: null, nftPoolAddress: null, nftGaugeAddress: null,
-    nftEntryValueUsd: null, nftEntryAt: null,
+    nftTokenId: null, nftPoolAddress: null,
     chainData: null
   };
   return state[p];
-}
-
-// ── USD value computation for NFT chain data ──
-function computeNftUsd(chainData, key) {
-  if (!chainData || !chainData.token0 || !chainData.token1) return null;
-  const cfg = PAIRS[key];
-  const livePrice = prices[cfg.symbol];
-  if (!livePrice) return null;
-  const t0 = chainData.token0, t1 = chainData.token1;
-  let p0, p1;
-  const s0 = (t0.symbol || '').toUpperCase();
-  const s1 = (t1.symbol || '').toUpperCase();
-  if (s0 === 'USDC' || s0 === 'USDBC') { p0 = 1; p1 = livePrice; }
-  else if (s1 === 'USDC' || s1 === 'USDBC') { p1 = 1; p0 = livePrice; }
-  else { p0 = livePrice; p1 = 0; }
-  const value0 = (t0.amount || 0) * p0;
-  const value1 = (t1.amount || 0) * p1;
-  const fees0 = (t0.fees || 0) * p0;
-  const fees1 = (t1.fees || 0) * p1;
-  return {
-    p0, p1,
-    value0, value1, valueTotal: value0 + value1,
-    fees0Usd: fees0, fees1Usd: fees1, feesUsd: fees0 + fees1
-  };
 }
 
 // ── Hedge math ──
@@ -533,7 +439,7 @@ function calcHedge(modal, P0, range_up, range_down, trigger) {
 let prices = {};
 let priceChanges = {};
 async function fetchPrices() {
-  const symbols = [...new Set([...Object.values(PAIRS).map(p => p.symbol), 'AEROUSDT'])];
+  const symbols = Object.values(PAIRS).map(p => p.symbol);
   try {
     const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`;
     const res = await fetch(url);
@@ -681,6 +587,22 @@ function renderPair(key) {
           </div>
         </div>
 
+        ${p.chainData ? `
+        <div style="background:#0f1422; border:1px solid #064e3b; border-radius:6px; padding:10px; margin-top:8px; font-size:11px">
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px">
+            <span style="color:#6ee7b7">⛓ Actual (on-chain)</span>
+            <span style="color:#9ca3af">${p.chainData.inRange ? 'IN-RANGE' : 'OUT-RANGE'}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:monospace">
+            <span style="color:#9ca3af">${p.chainData.token0.symbol}:</span>
+            <span>${p.chainData.token0.amount.toFixed(4)} (fees +${p.chainData.token0.fees.toFixed(6)})</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:monospace">
+            <span style="color:#9ca3af">${p.chainData.token1.symbol}:</span>
+            <span>${p.chainData.token1.amount.toFixed(4)} (fees +${p.chainData.token1.fees.toFixed(6)})</span>
+          </div>
+        </div>
+        ` : ''}
         <div class="actions" style="grid-template-columns:1fr 1fr 1fr">
           <button class="btn" onclick="syncNft('${key}')">⛓ Sync NFT</button>
           <button class="btn danger" onclick="closeCycle('${key}','WIN')">✓ Win</button>
@@ -688,7 +610,7 @@ function renderPair(key) {
         </div>
       ` : `
         <div class="range-row" style="color:#6b7280; font-size:11px; padding:14px 0; text-align:center">
-          Belum ada posisi LP manual. Modal preset: $${p.modal}<br>
+          Belum ada posisi. Modal: $${p.modal}<br>
           ${cfg.pool} • Asym ${cfg.range_up}/${cfg.range_down}
         </div>
         ${p.lastAnalysis ? `
@@ -700,72 +622,12 @@ function renderPair(key) {
             </div>
           </div>
         ` : ''}
-        <div class="actions" style="grid-template-columns: 1fr 1fr 1fr 1fr">
+        <div class="actions" style="grid-template-columns: 1fr 1fr 1fr">
           <button class="btn" onclick="analyzePair('${key}')">🤖 Analisa</button>
           <button class="btn primary" onclick="openEntry('${key}')">+ Entry</button>
           <button class="btn" onclick="setModal('${key}')">Modal</button>
-          <button class="btn" onclick="syncNft('${key}')">⛓ NFT</button>
         </div>
       `}
-      ${p.chainData ? (() => {
-        const usd = computeNftUsd(p.chainData, key);
-        const entryUsd = p.nftEntryValueUsd;
-        const curUsd = usd ? usd.valueTotal : 0;
-        const feesUsd = usd ? usd.feesUsd : 0;
-        const aero = (typeof p.chainData.aeroEarned === 'number') ? p.chainData.aeroEarned : null;
-        const aeroPrice = prices['AEROUSDT'] || 0;
-        const aeroUsd = (aero !== null && aeroPrice) ? aero * aeroPrice : 0;
-        const pnlUsd = entryUsd ? (curUsd + feesUsd + aeroUsd - entryUsd) : 0;
-        const pnlPct = entryUsd ? (pnlUsd / entryUsd * 100) : 0;
-        const pnlClass = pnlUsd > 0 ? 'pos' : pnlUsd < 0 ? 'neg' : 'neu';
-        const entryDate = p.nftEntryAt ? new Date(p.nftEntryAt).toLocaleDateString('id-ID', { day:'2-digit', month:'short' }) : '—';
-        return `
-      <div style="background:#0f1422; border:1px solid #064e3b; border-radius:6px; padding:10px; margin-top:10px; font-size:11px">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px">
-          <span style="color:#6ee7b7; font-weight:600">⛓ On-Chain Position</span>
-          <span style="color:${p.chainData.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${p.chainData.inRange ? '● IN-RANGE' : '● OUT-RANGE'}</span>
-        </div>
-        <div style="font-family:monospace; font-size:10px; color:#6b7280; margin-bottom:6px; word-break:break-all">
-          NFT #${p.nftTokenId} • Pool ${p.nftPoolAddress ? p.nftPoolAddress.slice(0,8)+'...'+p.nftPoolAddress.slice(-4) : '—'}
-        </div>
-        <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-          <span style="color:#9ca3af">${p.chainData.token0.symbol}</span>
-          <span>${p.chainData.token0.amount.toFixed(4)} ${usd ? `(≈$${usd.value0.toFixed(2)})` : ''}</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-          <span style="color:#9ca3af">${p.chainData.token1.symbol}</span>
-          <span>${p.chainData.token1.amount.toFixed(4)} ${usd ? `(≈$${usd.value1.toFixed(2)})` : ''}</span>
-        </div>
-        <div style="border-top:1px solid #1f2638; margin-top:6px; padding-top:6px">
-          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-            <span style="color:#9ca3af">Modal pas masuk <span style="color:#6b7280">(locked ${entryDate})</span></span>
-            <span style="color:#d0d8e0; font-weight:600">${entryUsd ? '$'+entryUsd.toFixed(2) : '—'}</span>
-          </div>
-          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-            <span style="color:#9ca3af">Value sekarang</span>
-            <span>${usd ? '$'+curUsd.toFixed(2) : '—'}</span>
-          </div>
-          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-            <span style="color:#9ca3af">Fee earned <span style="color:#6b7280">(trading)</span></span>
-            <span class="pos">+$${feesUsd.toFixed(4)}</span>
-          </div>
-          ${aero !== null ? `
-          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
-            <span style="color:#9ca3af">AERO emissions</span>
-            <span class="pos">+${aero.toFixed(4)} AERO ${aeroPrice ? `(≈$${aeroUsd.toFixed(4)})` : '(no price)'}</span>
-          </div>
-          ` : ''}
-          <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px dashed #1f2638; margin-top:4px">
-            <span style="color:#e2e8f0; font-weight:600; font-size:12px">PnL on-chain</span>
-            <span class="${pnlClass}" style="font-family:monospace; font-weight:700; font-size:13px">${entryUsd ? `${pnlUsd>=0?'+':''}$${pnlUsd.toFixed(2)} (${pnlUsd>=0?'+':''}${pnlPct.toFixed(2)}%)` : '— (sync dulu)'}</span>
-          </div>
-        </div>
-        <div style="margin-top:8px; display:flex; gap:6px">
-          <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="editNft('${key}')">✎ Edit NFT</button>
-          <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="relockEntry('${key}')">🔒 Re-lock modal</button>
-        </div>
-      </div>
-      `;})() : ''}
     </div>
   `;
 }
@@ -909,7 +771,6 @@ function kFmt(v, decs) {
 }
 
 function kCalc() {
-  renderSlSummary();  // refresh 4-pair SL summary on any input change
   const modal = parseFloat(document.getElementById('kmodal').value) || 0;
   const P0 = parseFloat(document.getElementById('kentry').value) || 0;
   const rUp = parseFloat(document.getElementById('krup').value) || 0;
@@ -945,37 +806,15 @@ function kCalc() {
     return h.L * (2*Math.sqrt(P) - P/Math.sqrt(h.Pb) - Math.sqrt(h.Pa));
   };
 
-  // Trigger map
-  const Pt1_sl = h.Pt1 * (1 + slBuf/100);
-  const Pt2_sl = h.Pt2 * (1 + slBuf/100);
-  document.getElementById('kmap_pb').textContent = `$${kFmt(h.Pb, decs)}`;
-  document.getElementById('kmap_p0').textContent = `$${kFmt(P0, decs)}`;
-  document.getElementById('kmap_pt1sl').textContent = `$${kFmt(Pt1_sl, decs)}`;
-  document.getElementById('kmap_pt1').textContent = `$${kFmt(h.Pt1, decs)}`;
-  document.getElementById('kmap_pt2sl').textContent = `$${kFmt(Pt2_sl, decs)}`;
-  document.getElementById('kmap_pt2').textContent = `$${kFmt(h.Pt2, decs)}`;
-
   // Predictions
   const pnlTop = lpV(h.Pb) - modal;
   document.getElementById('kouttop').textContent = `${pnlTop>=0?'+':''}$${pnlTop.toFixed(2)} (${pnlTop>=0?'+':''}${(pnlTop/modal*100).toFixed(3)}%)`;
-  document.getElementById('kouttop_b').textContent = `LP only — H1 & H2 not fired`;
 
-  // Whipsaw H1: H1 fires at Pt1, bounces UP to Pt1 SL
+  const Pt1_sl = h.Pt1 * (1 + slBuf/100);
   const lpAtSL = lpV(Pt1_sl);
-  const lpPnlWhip = lpAtSL - modal;
   const h1PnlWhip = (h.Pt1 - Pt1_sl) * (h.N1 / h.Pt1);
-  const pnlWhip = lpPnlWhip + h1PnlWhip;
-  document.getElementById('koutwhip').textContent = `${pnlWhip>=0?'+':''}$${pnlWhip.toFixed(2)} (${(pnlWhip/modal*100).toFixed(3)}%)`;
-  document.getElementById('koutwhip_b').textContent = `LP ${lpPnlWhip>=0?'+':''}$${lpPnlWhip.toFixed(2)}  /  H1 SL ${h1PnlWhip>=0?'+':''}$${h1PnlWhip.toFixed(2)}`;
-
-  // Whipsaw H2: H1 fires at Pt1, price drops to Pa (H2 fires), bounces UP to Pt2 SL
-  const lpAtPt2sl = lpV(Pt2_sl);
-  const lpPnlWhip2 = lpAtPt2sl - modal;
-  const h1PnlWhip2 = (h.Pt1 - Pt2_sl) * (h.N1 / h.Pt1);  // Pt2_sl < Pt1 → H1 still profit
-  const h2PnlWhip2 = (h.Pt2 - Pt2_sl) * (h.N2 / h.Pt2);  // Pt2_sl > Pt2 → H2 SL loss
-  const pnlWhip2 = lpPnlWhip2 + h1PnlWhip2 + h2PnlWhip2;
-  document.getElementById('koutwhip2').textContent = `${pnlWhip2>=0?'+':''}$${pnlWhip2.toFixed(2)} (${(pnlWhip2/modal*100).toFixed(3)}%)`;
-  document.getElementById('koutwhip2_b').textContent = `LP ${lpPnlWhip2>=0?'+':''}$${lpPnlWhip2.toFixed(2)}  /  H1 ${h1PnlWhip2>=0?'+':''}$${h1PnlWhip2.toFixed(2)}  /  H2 SL ${h2PnlWhip2>=0?'+':''}$${h2PnlWhip2.toFixed(2)}`;
+  const pnlWhip = (lpAtSL - modal) + h1PnlWhip;
+  document.getElementById('koutwhip').textContent = `${pnlWhip>=0?'+':''}$${pnlWhip.toFixed(2)} (${pnlWhip>=0?'+':''}${(pnlWhip/modal*100).toFixed(3)}%)`;
 
   const broken = h.N2 < 0;
   document.getElementById('koutbot').textContent = broken ? 'BROKEN (N2 negatif)' : '$0,00 (LOCKED ✓)';
@@ -994,36 +833,6 @@ function kCalc() {
   }
 }
 
-// ── Edit NFT info (tokenId + pool address) ──
-function editNft(key) {
-  const p = getPair(key);
-  const cfg = PAIRS[key];
-  const newId = prompt(`NFT Token ID ${cfg.name}:`, p.nftTokenId || '');
-  if (newId === null) return;
-  const newPool = prompt(`Pool Address ${cfg.name}:`, p.nftPoolAddress || '');
-  if (newPool === null) return;
-  const newGauge = prompt(`Gauge Address ${cfg.name} (kosongin = skip AERO emissions):`, p.nftGaugeAddress || cfg.gauge || '');
-  if (newGauge === null) return;
-  p.nftTokenId = newId.trim() || null;
-  p.nftPoolAddress = newPool.trim() || null;
-  p.nftGaugeAddress = newGauge.trim() || null;
-  saveState();
-  renderAll();
-}
-
-// ── Re-lock entry USD value (if user reset position) ──
-function relockEntry(key) {
-  const p = getPair(key);
-  if (!p.chainData) { alert('Sync NFT dulu sebelum lock entry.'); return; }
-  const usd = computeNftUsd(p.chainData, key);
-  if (!usd) { alert('Gagal hitung USD value — pastikan harga live udah loaded.'); return; }
-  if (!confirm(`Re-lock entry value ke $${usd.valueTotal.toFixed(2)}? PnL bakal di-reset.`)) return;
-  p.nftEntryValueUsd = usd.valueTotal;
-  p.nftEntryAt = Date.now();
-  saveState();
-  renderAll();
-}
-
 // ── NFT Position Sync (on-chain read) ──
 async function syncNft(key) {
   const p = getPair(key);
@@ -1039,7 +848,6 @@ async function syncNft(key) {
     if (!poolAddress) return;
     p.nftTokenId = tokenId.trim();
     p.nftPoolAddress = poolAddress.trim();
-    if (!p.nftGaugeAddress && cfg.gauge) p.nftGaugeAddress = cfg.gauge;
     saveState();
   }
 
@@ -1054,8 +862,7 @@ async function syncNft(key) {
         pair: key,
         tokenId: parseInt(p.nftTokenId),
         npmAddress: cfg.npm,
-        poolAddress: p.nftPoolAddress,
-        gaugeAddress: p.nftGaugeAddress || cfg.gauge || undefined
+        poolAddress: p.nftPoolAddress
       })
     });
     const data = await res.json();
@@ -1064,12 +871,6 @@ async function syncNft(key) {
       return;
     }
     p.chainData = { ...data, syncedAt: Date.now() };
-    // Auto-lock entry USD value on first sync
-    const usd = computeNftUsd(p.chainData, key);
-    if (usd && !p.nftEntryValueUsd) {
-      p.nftEntryValueUsd = usd.valueTotal;
-      p.nftEntryAt = Date.now();
-    }
     saveState();
     renderAll();
   } catch (e) {
@@ -1229,45 +1030,10 @@ function showAnalysis(key) {
   document.getElementById('analysis-modal').style.display = 'flex';
 }
 
-// ── GMX SL Summary (all 4 pairs at once) ──
-function renderSlSummary() {
-  const slBuf = parseFloat(document.getElementById('ksl')?.value) || 0.2;
-  const modal = parseFloat(document.getElementById('kmodal')?.value) || 1000;
-  const rows = Object.keys(PAIRS).filter(k => k !== 'CUSTOM').map(key => {
-    const cfg = PAIRS[key];
-    const P0 = prices[cfg.symbol];
-    if (!P0) return `<tr><td style="padding:6px 0; color:${cfg.color}">${cfg.name}</td><td colspan="3" style="text-align:right; color:#6b7280">—</td></tr>`;
-    const h = calcHedge(modal, P0, cfg.range_up, cfg.range_down, cfg.trigger);
-    const decs = P0 < 10 ? 4 : 2;
-    const pt1sl = h.Pt1 * (1 + slBuf/100);
-    const pt2sl = h.Pt2 * (1 + slBuf/100);
-    return `
-      <tr style="border-top:1px dashed #1f2638">
-        <td style="padding:10px 0; color:${cfg.color}; font-weight:600; vertical-align:top">${cfg.name}<br><span style="font-size:10px; color:#6b7280; font-weight:400">trig -${cfg.trigger}% • SL +${slBuf}%</span></td>
-        <td style="text-align:right; padding:10px 0; font-family:monospace; color:#d0d8e0; vertical-align:top">$${kFmt(P0, decs)}</td>
-        <td style="text-align:right; padding:10px 0; font-family:monospace; vertical-align:top">
-          <span style="color:#9ca3af; font-size:10px">OPEN di</span><br>
-          <span style="color:#d0d8e0">$${kFmt(h.Pt1, decs)}</span><br>
-          <span style="color:#f59e0b; font-size:10px; font-weight:600; letter-spacing:0.03em">⚠ OUT kalau whipsaw</span><br>
-          <span style="color:#f59e0b; font-weight:700; font-size:14px">$${kFmt(pt1sl, decs)}</span>
-        </td>
-        <td style="text-align:right; padding:10px 0; font-family:monospace; vertical-align:top">
-          <span style="color:#9ca3af; font-size:10px">OPEN di</span><br>
-          <span style="color:#d0d8e0">$${kFmt(h.Pt2, decs)}</span><br>
-          <span style="color:#f87171; font-size:10px; font-weight:600; letter-spacing:0.03em">⚠ OUT kalau whipsaw</span><br>
-          <span style="color:#f87171; font-weight:700; font-size:14px">$${kFmt(pt2sl, decs)}</span>
-        </td>
-      </tr>`;
-  }).join('');
-  const el = document.getElementById('kslsummary');
-  if (el) el.innerHTML = rows;
-}
-
 // ── Init ──
 async function refreshPrices() {
   await fetchPrices();
   renderAll();
-  renderSlSummary();
   // Re-sync calc entry if calc tab active
   if (document.querySelector('.tab.active')?.dataset.tab === 'calc') {
     const k = document.getElementById('kpair').value;
