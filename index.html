@@ -546,24 +546,14 @@ async function fetchPrices() {
   } catch (e) {
     console.error('Price fetch error:', e);
   }
-  // AERO price (separate fetch, doesn't break main if fails)
-  // Try Binance first, fallback to CoinGecko
+  // AERO price via CoinGecko (Binance has CORS issue from browser)
   try {
-    const aeroRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=AEROUSDT');
-    if (aeroRes.ok) {
-      const aeroData = await aeroRes.json();
-      if (aeroData.price) prices['AEROUSDT'] = parseFloat(aeroData.price);
+    const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=aerodrome-finance&vs_currencies=usd');
+    if (cgRes.ok) {
+      const cgData = await cgRes.json();
+      if (cgData['aerodrome-finance']?.usd) prices['AEROUSDT'] = cgData['aerodrome-finance'].usd;
     }
-  } catch (e) { /* try fallback */ }
-  if (!prices['AEROUSDT']) {
-    try {
-      const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=aerodrome-finance&vs_currencies=usd');
-      if (cgRes.ok) {
-        const cgData = await cgRes.json();
-        if (cgData['aerodrome-finance']?.usd) prices['AEROUSDT'] = cgData['aerodrome-finance'].usd;
-      }
-    } catch (e) { /* AERO price optional */ }
-  }
+  } catch (e) { /* AERO price optional */ }
   document.getElementById('last-update').textContent = new Date().toLocaleTimeString('id-ID');
 }
 
@@ -1359,8 +1349,12 @@ async function autoResyncChains() {
   for (const key of Object.keys(PAIRS)) {
     const p = getPair(key);
     if (p.chainData && p.nftTokenId && p.nftPoolAddress) {
-      const age = now - (p.chainData.syncedAt || 0);
-      if (age >= STALE_MS) await silentResyncChain(key);
+      const ageSec = Math.floor((now - (p.chainData.syncedAt || 0)) / 1000);
+      if (ageSec * 1000 >= STALE_MS) {
+        console.log(`[autoResync] ${key}: chainData stale ${ageSec}s → re-fetching...`);
+        await silentResyncChain(key);
+        console.log(`[autoResync] ${key}: done`);
+      }
     }
   }
 }
