@@ -482,9 +482,34 @@ function getPair(p) {
     n1: null, n2: null, collat: null,
     cyclePnl: 0, h1_fired: false, h2_fired: false,
     nftTokenId: null, nftPoolAddress: null,
+    nftEntryValueUsd: null, nftEntryAt: null,
     chainData: null
   };
   return state[p];
+}
+
+// ── USD value computation for NFT chain data ──
+function computeNftUsd(chainData, key) {
+  if (!chainData || !chainData.token0 || !chainData.token1) return null;
+  const cfg = PAIRS[key];
+  const livePrice = prices[cfg.symbol];
+  if (!livePrice) return null;
+  const t0 = chainData.token0, t1 = chainData.token1;
+  let p0, p1;
+  const s0 = (t0.symbol || '').toUpperCase();
+  const s1 = (t1.symbol || '').toUpperCase();
+  if (s0 === 'USDC' || s0 === 'USDBC') { p0 = 1; p1 = livePrice; }
+  else if (s1 === 'USDC' || s1 === 'USDBC') { p1 = 1; p0 = livePrice; }
+  else { p0 = livePrice; p1 = 0; }
+  const value0 = (t0.amount || 0) * p0;
+  const value1 = (t1.amount || 0) * p1;
+  const fees0 = (t0.fees || 0) * p0;
+  const fees1 = (t1.fees || 0) * p1;
+  return {
+    p0, p1,
+    value0, value1, valueTotal: value0 + value1,
+    fees0Usd: fees0, fees1Usd: fees1, feesUsd: fees0 + fees1
+  };
 }
 
 // ── Hedge math ──
@@ -655,22 +680,56 @@ function renderPair(key) {
           </div>
         </div>
 
-        ${p.chainData ? `
+        ${p.chainData ? (() => {
+          const usd = computeNftUsd(p.chainData, key);
+          const entryUsd = p.nftEntryValueUsd;
+          const curUsd = usd ? usd.valueTotal : 0;
+          const feesUsd = usd ? usd.feesUsd : 0;
+          const pnlUsd = entryUsd ? (curUsd + feesUsd - entryUsd) : 0;
+          const pnlPct = entryUsd ? (pnlUsd / entryUsd * 100) : 0;
+          const pnlClass = pnlUsd > 0 ? 'pos' : pnlUsd < 0 ? 'neg' : 'neu';
+          const entryDate = p.nftEntryAt ? new Date(p.nftEntryAt).toLocaleDateString('id-ID', { day:'2-digit', month:'short' }) : '—';
+          return `
         <div style="background:#0f1422; border:1px solid #064e3b; border-radius:6px; padding:10px; margin-top:8px; font-size:11px">
-          <div style="display:flex; justify-content:space-between; margin-bottom:4px">
-            <span style="color:#6ee7b7">⛓ Actual (on-chain)</span>
-            <span style="color:#9ca3af">${p.chainData.inRange ? 'IN-RANGE' : 'OUT-RANGE'}</span>
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px">
+            <span style="color:#6ee7b7; font-weight:600">⛓ On-Chain Position</span>
+            <span style="color:${p.chainData.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${p.chainData.inRange ? '● IN-RANGE' : '● OUT-RANGE'}</span>
           </div>
-          <div style="display:flex; justify-content:space-between; font-family:monospace">
-            <span style="color:#9ca3af">${p.chainData.token0.symbol}:</span>
-            <span>${p.chainData.token0.amount.toFixed(4)} (fees +${p.chainData.token0.fees.toFixed(6)})</span>
+          <div style="font-family:monospace; font-size:10px; color:#6b7280; margin-bottom:6px; word-break:break-all">
+            NFT #${p.nftTokenId} • Pool ${p.nftPoolAddress ? p.nftPoolAddress.slice(0,8)+'...'+p.nftPoolAddress.slice(-4) : '—'}
           </div>
-          <div style="display:flex; justify-content:space-between; font-family:monospace">
-            <span style="color:#9ca3af">${p.chainData.token1.symbol}:</span>
-            <span>${p.chainData.token1.amount.toFixed(4)} (fees +${p.chainData.token1.fees.toFixed(6)})</span>
+          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+            <span style="color:#9ca3af">${p.chainData.token0.symbol}</span>
+            <span>${p.chainData.token0.amount.toFixed(4)} ${usd ? `(≈$${usd.value0.toFixed(2)})` : ''}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+            <span style="color:#9ca3af">${p.chainData.token1.symbol}</span>
+            <span>${p.chainData.token1.amount.toFixed(4)} ${usd ? `(≈$${usd.value1.toFixed(2)})` : ''}</span>
+          </div>
+          <div style="border-top:1px solid #1f2638; margin-top:6px; padding-top:6px">
+            <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+              <span style="color:#9ca3af">Entry Value <span style="color:#6b7280">(locked ${entryDate})</span></span>
+              <span style="color:#d0d8e0; font-weight:600">${entryUsd ? '$'+entryUsd.toFixed(2) : '—'}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+              <span style="color:#9ca3af">Current Value</span>
+              <span>${usd ? '$'+curUsd.toFixed(2) : '—'}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-family:monospace; padding:2px 0">
+              <span style="color:#9ca3af">Fees earned</span>
+              <span class="pos">+$${feesUsd.toFixed(4)}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; padding-top:6px; border-top:1px dashed #1f2638; margin-top:4px">
+              <span style="color:#e2e8f0; font-weight:600; font-size:12px">PnL on-chain</span>
+              <span class="${pnlClass}" style="font-family:monospace; font-weight:700; font-size:13px">${entryUsd ? `${pnlUsd>=0?'+':''}$${pnlUsd.toFixed(2)} (${pnlUsd>=0?'+':''}${pnlPct.toFixed(2)}%)` : '— (sync dulu)'}</span>
+            </div>
+          </div>
+          <div style="margin-top:8px; display:flex; gap:6px">
+            <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="editNft('${key}')">✎ Edit NFT</button>
+            <button class="btn" style="padding:4px 8px; font-size:10px; flex:1" onclick="relockEntry('${key}')">🔒 Re-lock entry</button>
           </div>
         </div>
-        ` : ''}
+        `;})() : ''}
         <div class="actions" style="grid-template-columns:1fr 1fr 1fr">
           <button class="btn" onclick="syncNft('${key}')">⛓ Sync NFT</button>
           <button class="btn danger" onclick="closeCycle('${key}','WIN')">✓ Win</button>
@@ -924,6 +983,33 @@ function kCalc() {
   }
 }
 
+// ── Edit NFT info (tokenId + pool address) ──
+function editNft(key) {
+  const p = getPair(key);
+  const cfg = PAIRS[key];
+  const newId = prompt(`NFT Token ID ${cfg.name}:`, p.nftTokenId || '');
+  if (newId === null) return;
+  const newPool = prompt(`Pool Address ${cfg.name}:`, p.nftPoolAddress || '');
+  if (newPool === null) return;
+  p.nftTokenId = newId.trim() || null;
+  p.nftPoolAddress = newPool.trim() || null;
+  saveState();
+  renderAll();
+}
+
+// ── Re-lock entry USD value (if user reset position) ──
+function relockEntry(key) {
+  const p = getPair(key);
+  if (!p.chainData) { alert('Sync NFT dulu sebelum lock entry.'); return; }
+  const usd = computeNftUsd(p.chainData, key);
+  if (!usd) { alert('Gagal hitung USD value — pastikan harga live udah loaded.'); return; }
+  if (!confirm(`Re-lock entry value ke $${usd.valueTotal.toFixed(2)}? PnL bakal di-reset.`)) return;
+  p.nftEntryValueUsd = usd.valueTotal;
+  p.nftEntryAt = Date.now();
+  saveState();
+  renderAll();
+}
+
 // ── NFT Position Sync (on-chain read) ──
 async function syncNft(key) {
   const p = getPair(key);
@@ -962,6 +1048,12 @@ async function syncNft(key) {
       return;
     }
     p.chainData = { ...data, syncedAt: Date.now() };
+    // Auto-lock entry USD value on first sync
+    const usd = computeNftUsd(p.chainData, key);
+    if (usd && !p.nftEntryValueUsd) {
+      p.nftEntryValueUsd = usd.valueTotal;
+      p.nftEntryAt = Date.now();
+    }
     saveState();
     renderAll();
   } catch (e) {
