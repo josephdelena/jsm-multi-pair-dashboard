@@ -533,7 +533,7 @@ function calcHedge(modal, P0, range_up, range_down, trigger) {
 let prices = {};
 let priceChanges = {};
 async function fetchPrices() {
-  const symbols = [...new Set([...Object.values(PAIRS).map(p => p.symbol), 'AEROUSDT'])];
+  const symbols = Object.values(PAIRS).map(p => p.symbol);
   try {
     const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`;
     const res = await fetch(url);
@@ -546,6 +546,14 @@ async function fetchPrices() {
   } catch (e) {
     console.error('Price fetch error:', e);
   }
+  // AERO price (separate fetch, doesn't break main if fails)
+  try {
+    const aeroRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=AEROUSDT');
+    if (aeroRes.ok) {
+      const aeroData = await aeroRes.json();
+      if (aeroData.price) prices['AEROUSDT'] = parseFloat(aeroData.price);
+    }
+  } catch (e) { /* AERO price optional, ignore failure */ }
   document.getElementById('last-update').textContent = new Date().toLocaleTimeString('id-ID');
 }
 
