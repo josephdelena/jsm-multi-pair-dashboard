@@ -547,13 +547,23 @@ async function fetchPrices() {
     console.error('Price fetch error:', e);
   }
   // AERO price (separate fetch, doesn't break main if fails)
+  // Try Binance first, fallback to CoinGecko
   try {
     const aeroRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=AEROUSDT');
     if (aeroRes.ok) {
       const aeroData = await aeroRes.json();
       if (aeroData.price) prices['AEROUSDT'] = parseFloat(aeroData.price);
     }
-  } catch (e) { /* AERO price optional, ignore failure */ }
+  } catch (e) { /* try fallback */ }
+  if (!prices['AEROUSDT']) {
+    try {
+      const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=aerodrome-finance&vs_currencies=usd');
+      if (cgRes.ok) {
+        const cgData = await cgRes.json();
+        if (cgData['aerodrome-finance']?.usd) prices['AEROUSDT'] = cgData['aerodrome-finance'].usd;
+      }
+    } catch (e) { /* AERO price optional */ }
+  }
   document.getElementById('last-update').textContent = new Date().toLocaleTimeString('id-ID');
 }
 
