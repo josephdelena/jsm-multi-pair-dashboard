@@ -357,14 +357,18 @@
 
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
       <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Trigger Map</div>
-      <table style="width:100%; font-size:11px; border-collapse:collapse">
-        <tr><td style="color:#6ee7b7; padding:5px 0">Pb &nbsp;<span style="color:#6b7280">(LP exit atas)</span></td><td id="kmap_pb" style="text-align:right; font-family:monospace; color:#6ee7b7">—</td></tr>
-        <tr><td style="color:#d0d8e0; padding:5px 0; border-top:1px dashed #1f2638">P0 &nbsp;<span style="color:#6b7280">(entry)</span></td><td id="kmap_p0" style="text-align:right; font-family:monospace; color:#d0d8e0; border-top:1px dashed #1f2638">—</td></tr>
-        <tr><td style="color:#fca5a5; padding:5px 0">Pt1 SL &nbsp;<span style="color:#6b7280">(Whipsaw H1)</span></td><td id="kmap_pt1sl" style="text-align:right; font-family:monospace; color:#fca5a5">—</td></tr>
-        <tr><td style="color:#f59e0b; padding:5px 0">Pt1 &nbsp;<span style="color:#6b7280">(H1 fire, short open)</span></td><td id="kmap_pt1" style="text-align:right; font-family:monospace; color:#f59e0b">—</td></tr>
-        <tr><td style="color:#fca5a5; padding:5px 0">Pt2 SL &nbsp;<span style="color:#6b7280">(Whipsaw H2)</span></td><td id="kmap_pt2sl" style="text-align:right; font-family:monospace; color:#fca5a5">—</td></tr>
-        <tr><td style="color:#f59e0b; padding:5px 0">Pa = Pt2 &nbsp;<span style="color:#6b7280">(H2 fire, LP exit bawah)</span></td><td id="kmap_pt2" style="text-align:right; font-family:monospace; color:#f59e0b">—</td></tr>
-      </table>
+      <style>
+        .kmap-row { display:flex; align-items:baseline; padding:6px 0; font-size:12px; }
+        .kmap-row .label { white-space:nowrap; }
+        .kmap-row .dots { flex:1; border-bottom:1px dotted #2a3142; margin:0 10px; transform:translateY(-3px); }
+        .kmap-row .val { font-family:monospace; white-space:nowrap; }
+      </style>
+      <div class="kmap-row"><span class="label" style="color:#6ee7b7">Pb <span style="color:#6b7280">(LP exit atas)</span></span><span class="dots"></span><span class="val" id="kmap_pb" style="color:#6ee7b7">—</span></div>
+      <div class="kmap-row" style="border-top:1px dashed #1f2638"><span class="label" style="color:#d0d8e0">P0 <span style="color:#6b7280">(entry)</span></span><span class="dots"></span><span class="val" id="kmap_p0" style="color:#d0d8e0">—</span></div>
+      <div class="kmap-row"><span class="label" style="color:#fca5a5">Pt1 SL <span style="color:#6b7280">(Whipsaw H1)</span></span><span class="dots"></span><span class="val" id="kmap_pt1sl" style="color:#fca5a5">—</span></div>
+      <div class="kmap-row"><span class="label" style="color:#f59e0b">Pt1 <span style="color:#6b7280">(H1 fire, short open)</span></span><span class="dots"></span><span class="val" id="kmap_pt1" style="color:#f59e0b">—</span></div>
+      <div class="kmap-row"><span class="label" style="color:#fca5a5">Pt2 SL <span style="color:#6b7280">(Whipsaw H2)</span></span><span class="dots"></span><span class="val" id="kmap_pt2sl" style="color:#fca5a5">—</span></div>
+      <div class="kmap-row"><span class="label" style="color:#f59e0b">Pa = Pt2 <span style="color:#6b7280">(H2 fire, LP exit bawah)</span></span><span class="dots"></span><span class="val" id="kmap_pt2" style="color:#f59e0b">—</span></div>
     </div>
 
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
