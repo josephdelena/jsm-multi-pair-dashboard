@@ -3103,21 +3103,35 @@ async function plRefreshEntry(addedAt, silent) {
 }
 
 async function plRefreshAll(silent) {
-  if (_plRefreshing) return;
-  const arr = plLoadHistory();
-  if (!arr.length) return;
-  _plRefreshing = true;
-  if (!silent) plSetStatus(`⏳ Refresh ${arr.length} entries...`, 'warn');
-  let okCount = 0;
-  for (const e of arr) {
-    const ok = await plRefreshEntry(e.addedAt, true);
-    if (ok) okCount++;
-    plRenderHistory(); // re-render incremental biar user lihat progress
+  if (_plRefreshing) {
+    if (!silent) plSetStatus('⏳ Refresh udah jalan, tunggu sebentar.', 'warn');
+    return;
   }
-  _plRefreshing = false;
-  if (!silent) {
-    plSetStatus(`✓ Refresh selesai: ${okCount}/${arr.length} berhasil.`, 'ok');
-    setTimeout(() => plSetStatus(''), 4000);
+  const arr = plLoadHistory();
+  if (!arr.length) { if (!silent) plSetStatus('ℹ️ History kosong, gak ada yang di-refresh.', 'warn'); return; }
+  _plRefreshing = true;
+  let okCount = 0, errCount = 0;
+  try {
+    if (!silent) plSetStatus(`⏳ Refresh ${arr.length} entries...`, 'warn');
+    for (const e of arr) {
+      try {
+        const ok = await plRefreshEntry(e.addedAt, true);
+        if (ok) okCount++; else errCount++;
+      } catch (err) {
+        console.error('Refresh entry error:', err);
+        errCount++;
+      }
+      plRenderHistory();
+    }
+    if (!silent) {
+      plSetStatus(`✓ Refresh selesai: ${okCount}/${arr.length} berhasil${errCount ? `, ${errCount} gagal` : ''}.`, okCount ? 'ok' : 'warn');
+      setTimeout(() => plSetStatus(''), 5000);
+    }
+  } catch (e) {
+    if (!silent) plSetStatus(`❌ Refresh error: ${e.message}`, 'err');
+    console.error('plRefreshAll error:', e);
+  } finally {
+    _plRefreshing = false; // ALWAYS reset, no matter what
   }
 }
 
