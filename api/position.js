@@ -66,27 +66,42 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
   const eventTopic = '0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
   const tokenIdTopic = '0x' + pad(toHex(tokenId));
 
-  // Get latest block, then try progressively wider ranges
   const latestHex = await rpcCall('eth_blockNumber', []);
   const latest = parseInt(latestHex, 16);
-  const ranges = [18000]; // ~10 jam (Base ~2s/block)
-  let logs = null;
-  for (const range of ranges) {
-    const fromBlock = '0x' + Math.max(0, latest - range).toString(16);
+
+  // Chunked backward scan: 18k blok per chunk (~10 jam di Base @ 2s/block).
+  // Max 10 chunks = ~100 jam (~4 hari). Cukup buat posisi yg masih hidup.
+  // Stop early: setelah ketemu event, scan 1 chunk lagi ke belakang lalu berhenti
+  // (untuk catch follow-up mints yg deket waktu deposit awal).
+  const CHUNK = 18000;
+  const MAX_CHUNKS = 10;
+  let logs = [];
+  let foundAt = -1;
+
+  for (let c = 0; c < MAX_CHUNKS; c++) {
+    const toBlk = latest - (c * CHUNK);
+    const fromBlk = Math.max(0, toBlk - CHUNK + 1);
     try {
-      logs = await rpcCall('eth_getLogs', [{
+      const chunk = await rpcCall('eth_getLogs', [{
         address: npmAddress,
         topics: [eventTopic, tokenIdTopic],
-        fromBlock,
-        toBlock: 'latest'
+        fromBlock: '0x' + fromBlk.toString(16),
+        toBlock: '0x' + toBlk.toString(16)
       }]);
-      if (logs && logs.length) break;
+      if (chunk && chunk.length) {
+        logs = chunk.concat(logs); // older first after concat
+        if (foundAt < 0) foundAt = c;
+      } else if (foundAt >= 0 && c > foundAt) {
+        // Sudah ketemu di chunk sebelumnya, dan chunk ini kosong → kemungkinan udah lewat semua mint events
+        break;
+      }
     } catch (e) {
-      // 413 or rate limit — try next smaller... wait, we go bigger. If small fails too, just stop.
-      if (range === ranges[0]) continue;
+      // RPC error pada chunk ini — skip, lanjut chunk berikutnya
     }
+    if (fromBlk === 0) break;
   }
-  if (!logs || !logs.length) return null;
+
+  if (!logs.length) return null;
 
   let totalUsd = 0, totalAmount0 = 0n, totalAmount1 = 0n;
   let mintBlock = null;
