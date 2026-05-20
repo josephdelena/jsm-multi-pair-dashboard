@@ -31,7 +31,7 @@ const CHAINS = {
     masterchefs: [
       { name: 'PancakeSwap MasterChef V3', address: '0xC6A2Db661D5a5690172d8eB0a7DEA2d3008665A3', npmKind: 'uniswap', npmHint: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364' }
     ],
-    basescan: 'https://api.etherscan.io/v2/api',
+    basescan: 'https://api.basescan.org/api',
     knownDexContracts: [
       // NPMs (already in npms list above tapi included untuk completeness scan)
       '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', // Aerodrome SlipStream NPM
@@ -957,8 +957,8 @@ module.exports = async function handler(req, res) {
       if (!cfg.basescan) return res.status(400).json({ error: `Chain ${chainKey} belum support Basescan API` });
       const days = Math.max(1, Math.min(90, parseInt(lookbackDays) || 7));
       try {
-        const chainIdMap = { base: 8453, optimism: 10, arbitrum: 42161 };
-        const url = `${cfg.basescan}?chainid=${chainIdMap[chainKey]}&module=account&action=txlist&address=${walletAddress}&page=1&offset=100&sort=desc&apikey=${basescanKey}`;
+        // Dedicated endpoint (basescan.org, optimistic.etherscan.io, arbiscan.io) — gak butuh chainid param
+        const url = `${cfg.basescan}?module=account&action=txlist&address=${walletAddress}&page=1&offset=100&sort=desc&apikey=${basescanKey}`;
         const r = await fetch(url);
         const data = await r.json();
         // status '1' = success, '0' = no results or error. Check message untuk membedakan.
