@@ -22,9 +22,10 @@ const CHAINS = {
     ],
     npms: [
       { name: 'Aerodrome SlipStream', address: '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', kind: 'slipstream' },
-      { name: 'Uniswap V3 (Base)',    address: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', kind: 'uniswap' }
+      { name: 'Uniswap V3 (Base)',    address: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', kind: 'uniswap' },
+      { name: 'PancakeSwap V3 (Base)', address: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364', kind: 'uniswap' }
     ],
-    voter: '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5', // Aerodrome Voter
+    voter: '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5', // Aerodrome Voter (cuma kenal Aerodrome pool)
     reward: { symbol: 'AERO', coingeckoId: 'aerodrome-finance' },
     coingeckoPlatform: 'base'
   },
@@ -44,6 +45,24 @@ const CHAINS = {
     voter: '0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C', // Velodrome v2 Voter
     reward: { symbol: 'VELO', coingeckoId: 'velodrome-finance' },
     coingeckoPlatform: 'optimistic-ethereum'
+  },
+  arbitrum: {
+    name: 'Arbitrum',
+    rpcs: [
+      'https://arbitrum.llamarpc.com',
+      'https://arbitrum-one-rpc.publicnode.com',
+      'https://1rpc.io/arb',
+      'https://arbitrum.drpc.org',
+      'https://arb1.arbitrum.io/rpc'
+    ],
+    npms: [
+      { name: 'Uniswap V3 (Arb)',     address: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', kind: 'uniswap' },
+      { name: 'PancakeSwap V3 (Arb)', address: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364', kind: 'uniswap' },
+      { name: 'Camelot V3 (Arb)',     address: '0x00c7f3082833e796A5b3e4Bd59f6642FF44DCD15', kind: 'uniswap' }
+    ],
+    voter: null, // Uniswap/Pancake/Camelot gak ada Solidly-style Voter
+    reward: null,
+    coingeckoPlatform: 'arbitrum-one'
   }
 };
 
