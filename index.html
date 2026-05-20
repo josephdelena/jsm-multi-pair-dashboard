@@ -3316,10 +3316,11 @@ async function plParseTx() {
   plTxSetStatus('⏳ Fetching tx receipt + parsing logs...', 'warn');
   document.getElementById('pl_txresults').innerHTML = '';
   try {
+    const wallet = (document.getElementById('pl_wallet').value || localStorage.getItem('jsm-wallet') || '').trim();
     const r = await fetch('/api/position', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'parseTx', chain, txHash: hash })
+      body: JSON.stringify({ mode: 'parseTx', chain, txHash: hash, walletAddress: wallet || undefined })
     });
     const data = await r.json();
     if (!r.ok || !data.ok) { plTxSetStatus(`❌ ${data.error || 'error'}${data.detail ? ' — ' + data.detail : ''}`, 'err'); return; }
@@ -3359,6 +3360,39 @@ function plTxRenderResults(data) {
         </td>
       </tr>`;
   }).join('');
+  // Token flows display
+  let flowsHtml = '';
+  if (data.tokenFlows && data.tokenFlows.length) {
+    const flowRows = data.tokenFlows
+      .filter(f => f.amountIn > 0 || f.amountOut > 0)
+      .map(f => {
+        const inStr = f.amountIn > 0 ? `<span style="color:#6ee7b7">+${f.amountIn.toFixed(6)}</span>` : '0';
+        const outStr = f.amountOut > 0 ? `<span style="color:#f87171">-${f.amountOut.toFixed(6)}</span>` : '0';
+        const netColor = f.net >= 0 ? '#6ee7b7' : '#f87171';
+        const netSign = f.net >= 0 ? '+' : '';
+        return `<tr style="border-bottom:1px solid #1f2638">
+          <td style="padding:6px; font-family:monospace; color:#d0d8e0; font-weight:600">${f.symbol}</td>
+          <td style="padding:6px; font-family:monospace; font-size:10px; color:#6b7280">${f.address.slice(0,8)}...${f.address.slice(-4)}</td>
+          <td style="padding:6px; font-family:monospace; text-align:right">${inStr}</td>
+          <td style="padding:6px; font-family:monospace; text-align:right">${outStr}</td>
+          <td style="padding:6px; font-family:monospace; text-align:right; color:${netColor}; font-weight:700">${netSign}${f.net.toFixed(6)}</td>
+        </tr>`;
+      }).join('');
+    flowsHtml = `<div style="margin-top:12px; background:#0d1219; padding:10px; border-radius:6px">
+      <div style="font-size:11px; color:#a78bfa; font-weight:600; margin-bottom:6px">💸 Token Flows (wallet user, di tx ini)</div>
+      <table style="width:100%; border-collapse:collapse; font-size:11px">
+        <thead><tr style="color:#9ca3af; font-size:9px">
+          <th style="padding:4px; text-align:left">Symbol</th>
+          <th style="padding:4px; text-align:left">Address</th>
+          <th style="padding:4px; text-align:right">Diterima</th>
+          <th style="padding:4px; text-align:right">Dikirim</th>
+          <th style="padding:4px; text-align:right">NET</th>
+        </tr></thead>
+        <tbody>${flowRows}</tbody>
+      </table>
+    </div>`;
+  }
+
   document.getElementById('pl_txresults').innerHTML = `
     <div style="overflow-x:auto"><table style="width:100%; border-collapse:collapse">
       <thead style="background:#0d1219"><tr>
@@ -3369,7 +3403,8 @@ function plTxRenderResults(data) {
         <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:right">Aksi</th>
       </tr></thead><tbody>${rows}</tbody>
     </table></div>
-    <div style="margin-top:8px; font-size:10px; color:#6b7280">💡 Klik <b>↑ Pakai TokenId</b> buat auto-isi tokenId-nya ke field Token ID Manual. Pool address-nya kamu cari sendiri (mis. dari URL vfat atau klik token0 di Basescan → ke pool page).</div>`;
+    ${flowsHtml}
+    <div style="margin-top:8px; font-size:10px; color:#6b7280">💡 Klik <b>↑ Pakai TokenId</b> untuk lookup posisi (kalau NFT masih ada). Token Flows = berapa kamu terima/kirim di tx ini — pakai ini untuk hitung exit value (close) atau modal (open) manual.</div>`;
 }
 
 function plTxUseTokenId(tokenId, tokensCsv) {

@@ -1010,6 +1010,45 @@ module.exports = async function handler(req, res) {
           }
         }
 
+        // ERC20 Transfer events — track inflow/outflow per token for user wallet (kalau dikasih)
+        const userAddr = (walletAddress || '').toLowerCase();
+        const tokenFlows = {}; // { tokenAddr: { amountIn: BigInt, amountOut: BigInt } }
+        if (userAddr) {
+          for (const log of receipt.logs) {
+            if (log.topics[0] !== TRANSFER_TOPIC) continue;
+            // ERC721 has topic[3] = tokenId (4 topics); ERC20 has topic[1]+[2] only (3 topics)
+            if (log.topics.length !== 3) continue;
+            const fromAddr = ('0x' + log.topics[1].slice(-40)).toLowerCase();
+            const toAddr = ('0x' + log.topics[2].slice(-40)).toLowerCase();
+            const tokenAddr = (log.address || '').toLowerCase();
+            if (fromAddr !== userAddr && toAddr !== userAddr) continue;
+            const amount = hex2BN(log.data.replace('0x', '').slice(0, 64));
+            if (!tokenFlows[tokenAddr]) tokenFlows[tokenAddr] = { amountIn: 0n, amountOut: 0n };
+            if (toAddr === userAddr) tokenFlows[tokenAddr].amountIn += amount;
+            if (fromAddr === userAddr) tokenFlows[tokenAddr].amountOut += amount;
+          }
+        }
+        // Enrich each token flow with symbol/decimals + human amounts
+        const flows = [];
+        for (const [tokenAddr, flow] of Object.entries(tokenFlows)) {
+          let info = { symbol: '?', decimals: 18 };
+          try {
+            info = await chainCtx.run({ chainKey: actualChain }, async () => readErc20Info(tokenAddr));
+          } catch {}
+          const dec = info.decimals || 18;
+          const inHuman = Number(flow.amountIn) / Math.pow(10, dec);
+          const outHuman = Number(flow.amountOut) / Math.pow(10, dec);
+          const net = inHuman - outHuman;
+          flows.push({
+            address: tokenAddr,
+            symbol: info.symbol,
+            decimals: dec,
+            amountIn: inHuman,
+            amountOut: outHuman,
+            net
+          });
+        }
+
         // For each tokenId, try positions() to get pool info (token0, token1, fee/tickSpacing)
         const results = [];
         for (const tid of tokenIdSet) {
@@ -1035,7 +1074,7 @@ module.exports = async function handler(req, res) {
             positionError: err
           });
         }
-        return res.status(200).json({ ok: true, mode: 'parseTx', chain: actualChain, requestedChain: chainKey, txHash, blockNumber: parseInt(receipt.blockNumber, 16), tokenIds: results });
+        return res.status(200).json({ ok: true, mode: 'parseTx', chain: actualChain, requestedChain: chainKey, txHash, blockNumber: parseInt(receipt.blockNumber, 16), tokenIds: results, tokenFlows: flows });
       } catch (e) {
         return res.status(500).json({ error: 'parseTx failed', detail: e.message });
       }
