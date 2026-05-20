@@ -237,6 +237,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     <button class="tab" data-tab="calc" onclick="switchTab('calc')">🧮 Calculator</button>
+    <button class="tab" data-tab="vircalc" onclick="switchTab('vircalc')">🚀 VIRCALC</button>
   </div>
 
   <!-- ── TAB: DASHBOARD ── -->
@@ -425,6 +426,195 @@
       <div id="kinfo" style="background:#0f1422; border-left:3px solid #6ee7b7; padding:10px 14px; border-radius:4px; font-size:12px; color:#9ca3af; margin-top:14px">—</div>
     </div>
   </div><!-- /tab-calc -->
+
+  <!-- ── TAB: VIRCALC (VIRTUAL Cascade v5) ── -->
+  <div class="tab-pane" id="tab-vircalc">
+    <div style="background:#0a1f1a; border:1px solid #6ee7b7; border-radius:8px; padding:14px; margin-bottom:14px">
+      <div style="font-size:12px; color:#6ee7b7; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:4px">🚀 VIRTUAL Cascade Dynamic v5</div>
+      <div style="font-size:11px; color:#9ca3af">H1 trigger -3% dari entry · Cascade -1.1% dari close · TP -0.5% · SL +0.2% · Emergency floor Pa × 1.005 · Notional dynamic NET=$0 di Pa</div>
+    </div>
+
+    <!-- INPUT -->
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Input</div>
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px">
+        <div class="field"><label>Modal LP ($)</label><input type="number" id="vc_modal" value="1000" oninput="vircalc()"></div>
+        <div class="field"><label>Entry Price ($)</label><input type="number" id="vc_entry" value="0.70" step="0.0001" oninput="vircalc()"></div>
+        <div class="field"><label>Leverage (×)</label><input type="number" id="vc_lev" value="10" oninput="vircalc()"></div>
+        <div class="field"><label>Buffer Margin (%)</label><input type="number" id="vc_buf" value="20" step="5" oninput="vircalc()"></div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:10px">
+        <div class="field"><label>Range Atas Pb (%)</label><input type="number" id="vc_rup" value="1.0" step="0.1" oninput="vircalc()"></div>
+        <div class="field"><label>Range Bawah Pa (%)</label><input type="number" id="vc_rdn" value="5.0" step="0.1" oninput="vircalc()"></div>
+        <div class="field"><label>H1 Trigger (%)</label><input type="number" id="vc_h1trig" value="3.0" step="0.1" oninput="vircalc()"></div>
+        <div class="field"><label>Cascade Step (%)</label><input type="number" id="vc_step" value="1.1" step="0.1" oninput="vircalc()"></div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:10px">
+        <div class="field"><label>TP (%)</label><input type="number" id="vc_tp" value="0.5" step="0.1" oninput="vircalc()"></div>
+        <div class="field"><label>SL (%)</label><input type="number" id="vc_sl" value="0.2" step="0.05" oninput="vircalc()"></div>
+        <div class="field"><label>Emergency Floor (% atas Pa)</label><input type="number" id="vc_floor" value="0.5" step="0.1" oninput="vircalc()"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn" onclick="vcLoadLive()" style="width:100%">↻ Pakai harga live VIRTUAL</button></div>
+      </div>
+    </div>
+
+    <!-- RANGE LP -->
+    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px; margin-bottom:14px">
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">LP Range</div>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Batas Atas (Pb)</td><td id="vc_pb" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#d0d8e0; padding:6px 0">Entry (P0)</td><td id="vc_p0" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Batas Bawah (Pa)</td><td id="vc_pa" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+          <tr style="border-top:1px solid #1f2638"><td style="color:#9ca3af; padding:8px 0; font-size:11px">LP Loss @ Pa</td><td id="vc_lploss" style="text-align:right; padding:8px 0; color:#f87171">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">LP Gain @ Pb</td><td id="vc_lpgain" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+        </table>
+      </div>
+
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Emergency Floor</div>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Floor Price</td><td id="vc_floorp" style="text-align:right; padding:6px 0; color:#fbbf24">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">% atas Pa</td><td id="vc_floorpct" style="text-align:right; padding:6px 0">—</td></tr>
+        </table>
+        <div style="margin-top:10px; padding:8px; background:#1f1408; border-left:2px solid #f59e0b; border-radius:3px; font-size:10px; color:#fbbf24">
+          Cascade trigger di bawah floor ini → di-force ke floor. Mencegah gap unprotected sebelum Pa.
+        </div>
+      </div>
+
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Total Capital</div>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Modal LP</td><td id="vc_mlp" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Max Collat GMX</td><td id="vc_mcol" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Buffer Margin</td><td id="vc_mbuf" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr style="border-top:1px solid #1f2638"><td style="color:#fbbf24; padding:8px 0; font-weight:600">SIAPKAN TOTAL</td><td id="vc_mtot" style="text-align:right; padding:8px 0; color:#fbbf24; font-weight:700">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- HEDGE 1 -->
+    <div style="background:#131826; border:1px solid #f59e0b; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#f59e0b; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">🎯 Hedge 1 (Pre-Set di GMX dari Awal Cycle)</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 Trigger (Open H1)</td><td id="vc_h1trigp" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 TP (Close jika harga turun)</td><td id="vc_h1tpp" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🔴 SL (Close jika harga balik naik)</td><td id="vc_h1slp" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional Short</td><td id="vc_h1n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral (10×)</td><td id="vc_h1c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Tokens Short (kira-kira)</td><td id="vc_h1tok" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Profit kalau TP kena</td><td id="vc_h1tppnl" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#f87171; padding:6px 0; font-size:11px">Rugi kalau SL kena</td><td id="vc_h1slpnl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- HEDGE 2 — PATH A: H1 TP -->
+    <div style="background:#131826; border:1px solid #6ee7b7; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px">Hedge 2 — Path A: H1 TP duluan (harga turun bersih)</div>
+      <div style="font-size:10px; color:#9ca3af; margin-bottom:12px">Pasang H2 di GMX SETELAH H1 TP kena. Banked profit dari H1 TP udah masuk → H2 lebih kecil.</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 Trigger H2</td><td id="vc_h2a_trig" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 TP H2</td><td id="vc_h2a_tp" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🔴 SL H2</td><td id="vc_h2a_sl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional</td><td id="vc_h2a_n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral</td><td id="vc_h2a_c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Profit close di Pa</td><td id="vc_h2a_paprofit" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#f87171; padding:6px 0; font-size:11px">Rugi kalau SL kena</td><td id="vc_h2a_slpnl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- HEDGE 2 — PATH B: H1 SL (whipsaw) -->
+    <div style="background:#131826; border:1px solid #f87171; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#f87171; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px">Hedge 2 — Path B: H1 SL whipsaw (H1 rugi dulu)</div>
+      <div style="font-size:10px; color:#9ca3af; margin-bottom:12px">Pasang H2 SETELAH H1 SL kena. H2 sized lebih besar untuk cover rugi H1 + LP loss.</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 Trigger H2</td><td id="vc_h2b_trig" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 TP H2</td><td id="vc_h2b_tp" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🔴 SL H2</td><td id="vc_h2b_sl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional</td><td id="vc_h2b_n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral</td><td id="vc_h2b_c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Profit close di Pa</td><td id="vc_h2b_paprofit" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#f87171; padding:6px 0; font-size:11px">Rugi kalau SL kena</td><td id="vc_h2b_slpnl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- TRIGGER MAP -->
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Peta Harga (Trigger Map)</div>
+      <style>
+        .vc-row { display:flex; align-items:baseline; padding:5px 0; font-size:12px; font-family:monospace; }
+        .vc-row .vc-lbl { white-space:nowrap; }
+        .vc-row .vc-dots { flex:1; border-bottom:1px dotted #2a3142; margin:0 10px; transform:translateY(-3px); }
+        .vc-row .vc-val { white-space:nowrap; font-weight:600; }
+      </style>
+      <div class="vc-row"><span class="vc-lbl" style="color:#6ee7b7">⬆ Pb (LP exit atas)</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_pb" style="color:#6ee7b7">—</span></div>
+      <div class="vc-row" style="border-top:1px dashed #2a3142; border-bottom:1px dashed #2a3142"><span class="vc-lbl" style="color:#d0d8e0">─ P0 (Entry — pasang LP + H1)</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_p0" style="color:#d0d8e0">—</span></div>
+      <div class="vc-row"><span class="vc-lbl" style="color:#f87171">🔴 H1 SL (whipsaw -2.85)</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_h1sl" style="color:#f87171">—</span></div>
+      <div class="vc-row"><span class="vc-lbl" style="color:#fbbf24">🎯 H1 Trigger (-3% open short)</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_h1trig" style="color:#fbbf24">—</span></div>
+      <div class="vc-row"><span class="vc-lbl" style="color:#6ee7b7">🟢 H1 TP (banked profit)</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_h1tp" style="color:#6ee7b7">—</span></div>
+      <div class="vc-row"><span class="vc-lbl" style="color:#fbbf24">🎯 H2 Trigger Path A</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_h2atrig" style="color:#fbbf24">—</span></div>
+      <div class="vc-row"><span class="vc-lbl" style="color:#fbbf24">🎯 H2 Trigger Path B</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_h2btrig" style="color:#fbbf24">—</span></div>
+      <div class="vc-row"><span class="vc-lbl" style="color:#fbbf24">⚠ Emergency Floor</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_floor" style="color:#fbbf24">—</span></div>
+      <div class="vc-row" style="border-top:1px dashed #2a3142"><span class="vc-lbl" style="color:#f87171">⬇ Pa (LP exit bawah — H2 close di sini)</span><span class="vc-dots"></span><span class="vc-val" id="vc_m_pa" style="color:#f87171">—</span></div>
+    </div>
+
+    <!-- PREDIKSI OUTCOME -->
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Prediksi Outcome (Abaikan Yield & Fee)</div>
+      <div style="display:grid; gap:8px">
+        <div style="background:#0f1422; border-left:3px solid #6ee7b7; border-radius:4px; padding:10px 14px">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <span style="color:#d0d8e0">📈 Skenario 1: Naik langsung ke Pb (0 hedge fire) <span style="color:#6b7280">~73% probability</span></span>
+            <span id="vc_out_pb" class="pos" style="font-family:monospace; font-weight:600">—</span>
+          </div>
+          <div id="vc_out_pb_b" style="color:#6b7280; font-size:10px; margin-top:4px; font-family:monospace">—</div>
+        </div>
+        <div style="background:#0f1422; border-left:3px solid #6ee7b7; border-radius:4px; padding:10px 14px">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <span style="color:#d0d8e0">⬇ Skenario 2: Drop bersih ke Pa (Path A, 2 hedge) <span style="color:#6b7280">~10%</span></span>
+            <span id="vc_out_paclean" style="font-family:monospace; font-weight:600">—</span>
+          </div>
+          <div id="vc_out_paclean_b" style="color:#6b7280; font-size:10px; margin-top:4px; font-family:monospace">—</div>
+        </div>
+        <div style="background:#0f1422; border-left:3px solid #f59e0b; border-radius:4px; padding:10px 14px">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <span style="color:#d0d8e0">⚠ Skenario 3: H1 SL whipsaw, drop ke Pa (Path B, 2 hedge) <span style="color:#6b7280">~8%</span></span>
+            <span id="vc_out_pawhip" style="font-family:monospace; font-weight:600">—</span>
+          </div>
+          <div id="vc_out_pawhip_b" style="color:#6b7280; font-size:10px; margin-top:4px; font-family:monospace">—</div>
+        </div>
+        <div style="background:#0f1422; border-left:3px solid #f87171; border-radius:4px; padding:10px 14px">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <span style="color:#d0d8e0">❌ Skenario 4: H1 SL whipsaw, rebound ke Pb (1 hedge waste) <span style="color:#6b7280">~5%</span></span>
+            <span id="vc_out_whippb" class="neg" style="font-family:monospace; font-weight:600">—</span>
+          </div>
+          <div id="vc_out_whippb_b" style="color:#6b7280; font-size:10px; margin-top:4px; font-family:monospace">—</div>
+        </div>
+      </div>
+      <div style="margin-top:14px; padding:10px 14px; background:#0a1f1a; border-left:3px solid #6ee7b7; border-radius:4px; font-size:11px; color:#9ca3af">
+        <b style="color:#6ee7b7">Backtest 120 hari (Jan-Mei 2026, VIRTUAL -54%):</b> avg loss <b>-0.045%/cycle</b> (target -0.1% ✓). 92/92 cycle Pa NET ≈ $0.
+      </div>
+    </div>
+
+    <!-- CHEAT SHEET ORDER GMX -->
+    <div style="background:#131826; border:1px solid #6ee7b7; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">📋 Cheat Sheet Order GMX</div>
+      <div style="background:#0f1422; border-radius:4px; padding:12px; font-family:monospace; font-size:11px; color:#d0d8e0">
+        <div id="vc_cheatsheet" style="white-space:pre-line; line-height:1.7"></div>
+      </div>
+    </div>
+  </div><!-- /tab-vircalc -->
 
 </div><!-- /container -->
 
@@ -891,7 +1081,228 @@ function switchTab(name) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'calc') kCalc();
+  if (name === 'vircalc') vircalc();
 }
+
+// ── VIRCALC (VIRTUAL Cascade Dynamic v5) ──
+function vcFmt(v, decs) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  if (decs === undefined) decs = Math.abs(v) >= 1000 ? 2 : Math.abs(v) >= 10 ? 2 : Math.abs(v) >= 1 ? 4 : 6;
+  return v.toLocaleString('en-US', { minimumFractionDigits: decs, maximumFractionDigits: decs });
+}
+
+function vcLoadLive() {
+  const symbol = PAIRS.VIRTUAL?.symbol;
+  if (symbol && prices[symbol]) {
+    document.getElementById('vc_entry').value = prices[symbol];
+    vircalc();
+  } else {
+    alert('Harga live VIRTUAL belum loaded. Klik ↻ Refresh dulu.');
+  }
+}
+
+function vircalc() {
+  const modal = parseFloat(document.getElementById('vc_modal').value) || 0;
+  const P0 = parseFloat(document.getElementById('vc_entry').value) || 0;
+  const lev = parseFloat(document.getElementById('vc_lev').value) || 10;
+  const bufPct = parseFloat(document.getElementById('vc_buf').value) || 20;
+  const rUp = parseFloat(document.getElementById('vc_rup').value) || 0;
+  const rDn = parseFloat(document.getElementById('vc_rdn').value) || 0;
+  const h1trigPct = parseFloat(document.getElementById('vc_h1trig').value) || 0;
+  const stepPct = parseFloat(document.getElementById('vc_step').value) || 0;
+  const tpPct = parseFloat(document.getElementById('vc_tp').value) || 0;
+  const slPct = parseFloat(document.getElementById('vc_sl').value) || 0;
+  const floorPct = parseFloat(document.getElementById('vc_floor').value) || 0;
+
+  if (modal <= 0 || P0 <= 0) return;
+
+  // Price levels
+  const Pa = P0 * (1 - rDn/100);
+  const Pb = P0 * (1 + rUp/100);
+  const floor = Pa * (1 + floorPct/100);
+  const Pt1 = P0 * (1 - h1trigPct/100);
+  const H1_TP = Pt1 * (1 - tpPct/100);
+  const H1_SL = Pt1 * (1 + slPct/100);
+
+  // V3 LP math (Uniswap V3 concentrated liquidity)
+  const sqrtP0 = Math.sqrt(P0);
+  const sqrtPa = Math.sqrt(Pa);
+  const sqrtPb = Math.sqrt(Pb);
+  const denomL = 2 * sqrtP0 - P0/sqrtPb - sqrtPa;
+  const L = modal / denomL;
+
+  // LP value formulas
+  const lpV = (P) => {
+    if (P >= Pb) return L * (sqrtPb - sqrtPa);
+    if (P <= Pa) return L * (1/sqrtPa - 1/sqrtPb) * P;
+    return L * (2*Math.sqrt(P) - P/sqrtPb - sqrtPa);
+  };
+  const lpLossAtPa = lpV(Pa) - modal;  // negative number
+  const lpGainAtPb = lpV(Pb) - modal;  // small positive
+
+  // H1 sizing: cover full LP loss if H1 closes at Pa (banked = 0 initially)
+  const targetH1 = -lpLossAtPa;  // positive amount to cover
+  const N1 = Pt1 > Pa ? targetH1 * Pt1 / (Pt1 - Pa) : 0;
+  const collat1 = N1 / lev;
+  const tokens1 = N1 / Pt1;
+
+  const h1TpPnl = N1 * tpPct / 100;   // profit if TP
+  const h1SlPnl = -N1 * slPct / 100;  // loss if SL
+
+  // ── PATH A: H1 TP, then H2 ──
+  const bankedA = h1TpPnl;
+  const cascadeNextA = H1_TP * (1 - stepPct/100);
+  const Pt2_A = Math.max(cascadeNextA, floor);
+  const H2A_TP = Pt2_A * (1 - tpPct/100);
+  const H2A_SL = Pt2_A * (1 + slPct/100);
+  const targetH2A = targetH1 - bankedA;
+  const N2A = Pt2_A > Pa ? targetH2A * Pt2_A / (Pt2_A - Pa) : 0;
+  const collat2A = N2A / lev;
+  const h2A_paProfit = N2A * (Pt2_A - Pa) / Pt2_A;
+  const h2A_slPnl = -N2A * slPct / 100;
+
+  // ── PATH B: H1 SL whipsaw, then H2 ──
+  const bankedB = h1SlPnl;  // negative
+  const cascadeNextB = H1_SL * (1 - stepPct/100);
+  const Pt2_B = Math.max(cascadeNextB, floor);
+  const H2B_TP = Pt2_B * (1 - tpPct/100);
+  const H2B_SL = Pt2_B * (1 + slPct/100);
+  const targetH2B = targetH1 - bankedB;  // larger because need to cover H1 loss
+  const N2B = Pt2_B > Pa ? targetH2B * Pt2_B / (Pt2_B - Pa) : 0;
+  const collat2B = N2B / lev;
+  const h2B_paProfit = N2B * (Pt2_B - Pa) / Pt2_B;
+  const h2B_slPnl = -N2B * slPct / 100;
+
+  // Max collat (worst path)
+  const maxCollat = Math.max(collat1, collat2A, collat2B);
+  const buffer = (modal + maxCollat) * bufPct / 100;
+  const totalCapital = modal + maxCollat + buffer;
+
+  // Decimal precision
+  const dec = P0 < 1 ? 4 : P0 < 100 ? 3 : 2;
+
+  // === FILL UI ===
+  // Range LP
+  document.getElementById('vc_pb').textContent = `$${vcFmt(Pb, dec)}  (+${rUp}%)`;
+  document.getElementById('vc_p0').textContent = `$${vcFmt(P0, dec)}`;
+  document.getElementById('vc_pa').textContent = `$${vcFmt(Pa, dec)}  (-${rDn}%)`;
+  document.getElementById('vc_lploss').textContent = `$${vcFmt(lpLossAtPa, 2)}`;
+  document.getElementById('vc_lpgain').textContent = `+$${vcFmt(lpGainAtPb, 2)}`;
+
+  // Emergency Floor
+  document.getElementById('vc_floorp').textContent = `$${vcFmt(floor, dec)}`;
+  document.getElementById('vc_floorpct').textContent = `+${floorPct}% (= Pa × ${(1+floorPct/100).toFixed(3)})`;
+
+  // Capital
+  document.getElementById('vc_mlp').textContent = `$${vcFmt(modal, 2)}`;
+  document.getElementById('vc_mcol').textContent = `$${vcFmt(maxCollat, 2)}  (single worst-case)`;
+  document.getElementById('vc_mbuf').textContent = `$${vcFmt(buffer, 2)}  (${bufPct}%)`;
+  document.getElementById('vc_mtot').textContent = `$${vcFmt(totalCapital, 2)}`;
+
+  // Hedge 1
+  document.getElementById('vc_h1trigp').textContent = `$${vcFmt(Pt1, dec)}  (-${h1trigPct}%)`;
+  document.getElementById('vc_h1tpp').textContent = `$${vcFmt(H1_TP, dec)}  (-${tpPct}%)`;
+  document.getElementById('vc_h1slp').textContent = `$${vcFmt(H1_SL, dec)}  (+${slPct}%)`;
+  document.getElementById('vc_h1n').textContent = `$${vcFmt(N1, 2)}`;
+  document.getElementById('vc_h1c').textContent = `$${vcFmt(collat1, 2)}  (lev ${lev}×)`;
+  document.getElementById('vc_h1tok').textContent = `${vcFmt(tokens1, 2)} VIRTUAL`;
+  document.getElementById('vc_h1tppnl').textContent = `+$${vcFmt(h1TpPnl, 2)}`;
+  document.getElementById('vc_h1slpnl').textContent = `-$${vcFmt(Math.abs(h1SlPnl), 2)}`;
+
+  // H2 Path A
+  document.getElementById('vc_h2a_trig').textContent = `$${vcFmt(Pt2_A, dec)}`;
+  document.getElementById('vc_h2a_tp').textContent = `$${vcFmt(H2A_TP, dec)}`;
+  document.getElementById('vc_h2a_sl').textContent = `$${vcFmt(H2A_SL, dec)}`;
+  document.getElementById('vc_h2a_n').textContent = `$${vcFmt(N2A, 2)}`;
+  document.getElementById('vc_h2a_c').textContent = `$${vcFmt(collat2A, 2)}`;
+  document.getElementById('vc_h2a_paprofit').textContent = `+$${vcFmt(h2A_paProfit, 2)}`;
+  document.getElementById('vc_h2a_slpnl').textContent = `-$${vcFmt(Math.abs(h2A_slPnl), 2)}`;
+
+  // H2 Path B
+  document.getElementById('vc_h2b_trig').textContent = `$${vcFmt(Pt2_B, dec)}`;
+  document.getElementById('vc_h2b_tp').textContent = `$${vcFmt(H2B_TP, dec)}`;
+  document.getElementById('vc_h2b_sl').textContent = `$${vcFmt(H2B_SL, dec)}`;
+  document.getElementById('vc_h2b_n').textContent = `$${vcFmt(N2B, 2)}`;
+  document.getElementById('vc_h2b_c').textContent = `$${vcFmt(collat2B, 2)}`;
+  document.getElementById('vc_h2b_paprofit').textContent = `+$${vcFmt(h2B_paProfit, 2)}`;
+  document.getElementById('vc_h2b_slpnl').textContent = `-$${vcFmt(Math.abs(h2B_slPnl), 2)}`;
+
+  // Map
+  document.getElementById('vc_m_pb').textContent = `$${vcFmt(Pb, dec)}`;
+  document.getElementById('vc_m_p0').textContent = `$${vcFmt(P0, dec)}`;
+  document.getElementById('vc_m_h1sl').textContent = `$${vcFmt(H1_SL, dec)}`;
+  document.getElementById('vc_m_h1trig').textContent = `$${vcFmt(Pt1, dec)}`;
+  document.getElementById('vc_m_h1tp').textContent = `$${vcFmt(H1_TP, dec)}`;
+  document.getElementById('vc_m_h2atrig').textContent = `$${vcFmt(Pt2_A, dec)}`;
+  document.getElementById('vc_m_h2btrig').textContent = `$${vcFmt(Pt2_B, dec)}`;
+  document.getElementById('vc_m_floor').textContent = `$${vcFmt(floor, dec)}`;
+  document.getElementById('vc_m_pa').textContent = `$${vcFmt(Pa, dec)}`;
+
+  // Predictions
+  // Skenario 1: Naik ke Pb, no hedge
+  document.getElementById('vc_out_pb').textContent = `+$${vcFmt(lpGainAtPb, 2)}  (+${(lpGainAtPb/modal*100).toFixed(3)}%)`;
+  document.getElementById('vc_out_pb_b').textContent = `LP gain saja, hedge gak fire`;
+
+  // Skenario 2: Path A (H1 TP + H2 close Pa)
+  const s2_lp = lpLossAtPa;
+  const s2_h1 = h1TpPnl;
+  const s2_h2 = h2A_paProfit;
+  const s2_net = s2_lp + s2_h1 + s2_h2;
+  document.getElementById('vc_out_paclean').textContent = `${s2_net>=0?'+':''}$${vcFmt(s2_net, 2)}  (${(s2_net/modal*100).toFixed(3)}%)`;
+  document.getElementById('vc_out_paclean').className = s2_net>=0?'pos':'neg';
+  document.getElementById('vc_out_paclean_b').textContent = `LP ${vcFmt(s2_lp,2)} + H1 TP +${vcFmt(s2_h1,2)} + H2 Pa close +${vcFmt(s2_h2,2)}`;
+
+  // Skenario 3: Path B (H1 SL + H2 close Pa)
+  const s3_lp = lpLossAtPa;
+  const s3_h1 = h1SlPnl;
+  const s3_h2 = h2B_paProfit;
+  const s3_net = s3_lp + s3_h1 + s3_h2;
+  document.getElementById('vc_out_pawhip').textContent = `${s3_net>=0?'+':''}$${vcFmt(s3_net, 2)}  (${(s3_net/modal*100).toFixed(3)}%)`;
+  document.getElementById('vc_out_pawhip').className = s3_net>=0?'pos':'neg';
+  document.getElementById('vc_out_pawhip_b').textContent = `LP ${vcFmt(s3_lp,2)} + H1 SL ${vcFmt(s3_h1,2)} + H2 Pa close +${vcFmt(s3_h2,2)}`;
+
+  // Skenario 4: Whipsaw H1 + rebound to Pb
+  const s4_lp = lpGainAtPb;
+  const s4_h1 = h1SlPnl;
+  const s4_net = s4_lp + s4_h1;
+  document.getElementById('vc_out_whippb').textContent = `${s4_net>=0?'+':''}$${vcFmt(s4_net, 2)}  (${(s4_net/modal*100).toFixed(3)}%)`;
+  document.getElementById('vc_out_whippb_b').textContent = `LP +${vcFmt(s4_lp,2)} + H1 SL ${vcFmt(s4_h1,2)} (no H2 fire — rebound)`;
+
+  // Cheat Sheet
+  const cs = `
+[1] OPEN LP @ $${vcFmt(P0, dec)}
+    Pool: Aerodrome/Uniswap CL VIRTUAL/USDC (0.05% fee)
+    Range: $${vcFmt(Pa, dec)} - $${vcFmt(Pb, dec)}
+    Amount: $${vcFmt(modal, 2)}
+
+[2] OPEN GMX STOP-MARKET H1 (pre-armed)
+    Side: SHORT VIRTUAL-PERP
+    Trigger: $${vcFmt(Pt1, dec)}  (-${h1trigPct}% dari entry)
+    Notional: $${vcFmt(N1, 2)}  (≈ ${vcFmt(tokens1, 2)} VIRTUAL)
+    Collateral: $${vcFmt(collat1, 2)}  (leverage ${lev}×)
+    TP: $${vcFmt(H1_TP, dec)}
+    SL: $${vcFmt(H1_SL, dec)}
+
+[3] SETELAH H1 FIRE (pilih path):
+    ─ Path A (H1 TP kena → harga turun bersih):
+      Banked: +$${vcFmt(h1TpPnl, 2)}
+      Pasang H2: Trigger $${vcFmt(Pt2_A, dec)}, Notional $${vcFmt(N2A, 2)}, Collat $${vcFmt(collat2A, 2)}
+      TP: $${vcFmt(H2A_TP, dec)}, SL: $${vcFmt(H2A_SL, dec)}
+
+    ─ Path B (H1 SL kena → whipsaw):
+      Realized: -$${vcFmt(Math.abs(h1SlPnl), 2)}
+      Pasang H2: Trigger $${vcFmt(Pt2_B, dec)}, Notional $${vcFmt(N2B, 2)}, Collat $${vcFmt(collat2B, 2)}
+      TP: $${vcFmt(H2B_TP, dec)}, SL: $${vcFmt(H2B_SL, dec)}
+
+[4] EXIT CYCLE:
+    ─ Tembus Pb $${vcFmt(Pb, dec)}: LP exit, cancel hedge queued
+    ─ Hit Pa $${vcFmt(Pa, dec)}: Close LP + close H2 manual
+
+[5] CAPITAL SIAPKAN: $${vcFmt(totalCapital, 2)}  (LP ${vcFmt(modal,0)} + collat ${vcFmt(maxCollat,0)} + buffer ${vcFmt(buffer,0)})
+  `.trim();
+  document.getElementById('vc_cheatsheet').textContent = cs;
+}
+
 
 // ── Calculator (Tab) ──
 const KPRESETS = {
