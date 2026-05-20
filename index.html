@@ -3191,12 +3191,29 @@ async function plLookup() {
       if (d.npmCounts) {
         for (const [name, c] of Object.entries(d.npmCounts)) diagLines.push(`${name} balanceOf: ${c}`);
       }
-      if (d.autoResolvedGauge) diagLines.push(`Gauge auto-resolved: ${d.autoResolvedGauge.slice(0,8)}...${d.autoResolvedGauge.slice(-4)}`);
-      else if (d.effectiveGauge) diagLines.push(`Gauge dipakai: ${d.effectiveGauge.slice(0,8)}...${d.effectiveGauge.slice(-4)}`);
-      else diagLines.push('Gauge: gak ada di Voter (pool ini gak punya gauge)');
+      if (d.autoResolvedGauge) diagLines.push(`Gauge auto-resolved: <span style="color:#a78bfa">${d.autoResolvedGauge}</span>`);
+      else if (d.effectiveGauge) diagLines.push(`Gauge (user input): ${d.effectiveGauge}`);
+      else diagLines.push('Gauge: gak ada di Voter (pool ini gak punya gauge resmi)');
       if (d.gaugeStakedCount != null) diagLines.push(`Gauge stakedLength: ${d.gaugeStakedCount}`);
       if (d.gaugeError) diagLines.push(`Gauge error: ${d.gaugeError}`);
-      plSetStatus(`ℹ️ Gak ada NFT LP milik wallet ini di pool tersebut.<br><span style="color:#6b7280; font-size:10px">Pool tokens: ${data.poolMeta?.token0 || '—'} / ${data.poolMeta?.token1 || '—'}<br>${diagLines.join(' · ')}</span>`, 'warn');
+
+      // Tampilkan candidates (NFT yg di-enumerate tapi gak match)
+      let candHtml = '';
+      if (d.candidates && d.candidates.length) {
+        const poolT0 = data.poolMeta?.token0 || '';
+        const poolT1 = data.poolMeta?.token1 || '';
+        const poolKey = data.poolMeta?.tickSpacing != null ? data.poolMeta.tickSpacing : data.poolMeta?.fee;
+        const rows = d.candidates.map(c => {
+          if (c.error) return `<tr><td>#${c.tokenId}</td><td>${c.npm}</td><td>${c.source}</td><td colspan="4" style="color:#f87171">${c.error}</td></tr>`;
+          const t0 = c.matchToken0 ? `<span style="color:#6ee7b7">${c.token0.slice(0,10)}...</span>` : `<span style="color:#f87171">${c.token0.slice(0,10)}...</span>`;
+          const t1 = c.matchToken1 ? `<span style="color:#6ee7b7">${c.token1.slice(0,10)}...</span>` : `<span style="color:#f87171">${c.token1.slice(0,10)}...</span>`;
+          const f = c.matchFee ? `<span style="color:#6ee7b7">${c.feeOrSpacing}</span>` : `<span style="color:#f87171">${c.feeOrSpacing} (pool: ${poolKey})</span>`;
+          return `<tr><td>#${c.tokenId}</td><td>${c.npm}</td><td>${c.source}</td><td>${t0}</td><td>${t1}</td><td>${f}</td></tr>`;
+        }).join('');
+        candHtml = `<div style="margin-top:8px"><div style="color:#9ca3af; font-size:10px; margin-bottom:4px">NFT yang di-enumerate (merah = mismatch):</div><div style="overflow-x:auto"><table style="width:100%; font-family:monospace; font-size:10px; border-collapse:collapse"><thead><tr style="color:#6b7280"><th style="text-align:left; padding:2px 6px">ID</th><th style="text-align:left; padding:2px 6px">NPM</th><th style="text-align:left; padding:2px 6px">Src</th><th style="text-align:left; padding:2px 6px">token0</th><th style="text-align:left; padding:2px 6px">token1</th><th style="text-align:left; padding:2px 6px">fee/tickSpacing</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      }
+
+      plSetStatus(`ℹ️ Gak ada NFT LP milik wallet ini di pool tersebut.<br><span style="color:#6b7280; font-size:10px">Pool tokens: ${data.poolMeta?.token0 || '—'} / ${data.poolMeta?.token1 || '—'} · fee/tickSpacing: ${data.poolMeta?.tickSpacing ?? data.poolMeta?.fee ?? '—'}<br>${diagLines.join(' · ')}</span>${candHtml}`, 'warn');
       return;
     }
     plSetStatus(`✓ Ketemu ${data.positions.length} posisi di pool ini.`, 'ok');

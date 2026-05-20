@@ -427,7 +427,10 @@ async function readGaugeStakedByIndex(gaugeAddress, wallet, idx) {
 async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAddress) {
   const results = [];
   const seenTokenIds = new Set();
-  const diag = { npmCounts: {}, gaugeStakedCount: null, gaugeError: null };
+  const candidates = []; // log semua NFT yg di-enumerate (untuk diag kalau gak ketemu match)
+  const diag = { npmCounts: {}, gaugeStakedCount: null, gaugeError: null, candidates };
+
+  const poolKey = poolMeta.tickSpacing != null ? poolMeta.tickSpacing : poolMeta.fee;
 
   // Helper: check 1 tokenId di NPM mana → kalau match pool, tambah ke results
   async function tryMatch(npm, tokenId, source) {
@@ -435,12 +438,17 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
     seenTokenIds.add(tokenId);
     let pos;
     try { pos = await readPosition(npm.address, tokenId); }
-    catch { return; }
+    catch (e) { candidates.push({ tokenId, npm: npm.name, source, error: e.message }); return; }
     const matchToken0 = pos.token0.toLowerCase() === poolMeta.token0;
     const matchToken1 = pos.token1.toLowerCase() === poolMeta.token1;
-    if (!matchToken0 || !matchToken1) return;
-    const poolKey = poolMeta.tickSpacing != null ? poolMeta.tickSpacing : poolMeta.fee;
-    if (poolKey != null && pos.fee !== poolKey) return;
+    const matchFee = poolKey == null || pos.fee === poolKey;
+    const matched = matchToken0 && matchToken1 && matchFee;
+    candidates.push({
+      tokenId, npm: npm.name, source,
+      token0: pos.token0.toLowerCase(), token1: pos.token1.toLowerCase(), feeOrSpacing: pos.fee,
+      matchToken0, matchToken1, matchFee, matched
+    });
+    if (!matched) return;
     results.push({ tokenId, npmAddress: npm.address, npmName: npm.name, npmKind: npm.kind, source, position: pos });
   }
 
@@ -607,13 +615,11 @@ module.exports = async function handler(req, res) {
       }
       try {
         const poolMeta = await readPoolMeta(poolAddress);
-        // Auto-resolve gauge dari Voter kalau user gak kasih (atau kasih address yg jelas dari chain lain — kita pakai voter yg lebih akurat)
-        let effectiveGauge = gaugeAddress && /^0x[a-fA-F0-9]{40}$/.test(gaugeAddress) ? gaugeAddress : null;
-        let autoResolvedGauge = null;
-        if (!effectiveGauge) {
-          autoResolvedGauge = await resolveGaugeForPool(poolAddress);
-          if (autoResolvedGauge) effectiveGauge = autoResolvedGauge;
-        }
+        // SELALU auto-resolve gauge dari Voter chain saat ini (paling akurat).
+        // User input cuma fallback kalau Voter return null (pool gak punya gauge resmi).
+        let autoResolvedGauge = await resolveGaugeForPool(poolAddress);
+        const userGauge = gaugeAddress && /^0x[a-fA-F0-9]{40}$/.test(gaugeAddress) ? gaugeAddress : null;
+        let effectiveGauge = autoResolvedGauge || userGauge;
         const { results: matches, diag } = await findPositionsByPool(walletAddress, poolAddress, poolMeta, effectiveGauge);
         diag.autoResolvedGauge = autoResolvedGauge;
         diag.effectiveGauge = effectiveGauge;
