@@ -3043,9 +3043,16 @@ async function plRefreshEntry(addedAt, silent) {
   const idx = arr.findIndex(x => x.addedAt === addedAt);
   if (idx < 0) return false;
   const e = arr[idx];
-  if (!e.poolAddress || !e.tokenId || !e.chain) {
-    if (!silent) plSetStatus(`⚠ Entry #${e.tokenId} gak punya pool/chain info — skip refresh.`, 'warn');
+  if (!e.poolAddress || !e.tokenId) {
+    if (!silent) plSetStatus(`⚠ Entry #${e.tokenId} gak punya pool address — skip refresh.`, 'warn');
     return false;
+  }
+  // Infer chain untuk entry lama (sebelum field chain disimpan)
+  if (!e.chain) {
+    if (/velodrome/i.test(e.npmName || '') || e.rewardSymbol === 'VELO') e.chain = 'optimism';
+    else e.chain = 'base'; // default (Aerodrome/Base sebelumnya)
+    arr[idx] = e;
+    plSaveHistory(arr);
   }
   // Wallet cached (gauge auto-resolved server-side)
   const wallet = localStorage.getItem('jsm-wallet');
