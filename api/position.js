@@ -110,6 +110,47 @@ function getMasterchefs() {
   return CHAINS[key].masterchefs || [];
 }
 
+// ── Scan PancakeSwap MasterChef V3 Deposit events filtered by user ──
+// Event: Deposit(address indexed user, uint256 indexed pid, uint256 indexed tokenId, uint256, int24, int24)
+// Topic 0 = 0xb19157bf...82fbf. Reliable: works even if user staked via vfat/router proxy.
+async function scanMasterChefDeposits(masterchefAddr, walletAddress) {
+  const DEPOSIT_TOPIC = '0xb19157bff94fdd40c58c7d4a5d52e8eb8c2d570ca17b322b49a2bbbeedc82fbf';
+  const userTopic = '0x' + pad(walletAddress.replace('0x','').toLowerCase());
+
+  const latestHex = await rpcCall('eth_blockNumber', []);
+  const latest = parseInt(latestHex, 16);
+  const tokenIds = new Set();
+
+  let cursor = latest;
+  let chunkSize = 500_000;
+  const MIN_CHUNK = 25_000;
+  const FLOOR_BLOCK = Math.max(0, latest - 6_000_000); // ~4 bulan di Base
+
+  while (cursor > FLOOR_BLOCK) {
+    const toBlk = cursor;
+    const fromBlk = Math.max(FLOOR_BLOCK, cursor - chunkSize + 1);
+    try {
+      const logs = await rpcCall('eth_getLogs', [{
+        address: masterchefAddr,
+        topics: [DEPOSIT_TOPIC, userTopic], // topic[2]=pid, topic[3]=tokenId, unfiltered
+        fromBlock: '0x' + fromBlk.toString(16),
+        toBlock: '0x' + toBlk.toString(16)
+      }]);
+      if (logs && logs.length) {
+        for (const log of logs) {
+          // tokenId di topic[3]
+          if (log.topics[3]) tokenIds.add(BigInt(log.topics[3]).toString());
+        }
+      }
+      cursor = fromBlk - 1;
+    } catch (e) {
+      if (chunkSize > MIN_CHUNK) { chunkSize = Math.max(MIN_CHUNK, Math.floor(chunkSize / 2)); continue; }
+      cursor = fromBlk - 1;
+    }
+  }
+  return Array.from(tokenIds);
+}
+
 // ── Scan NPM Transfer events FROM wallet TO target (mis. masterchef) ──
 // Pakai chunk besar (500k blok) karena filter sempit (3 topics) — result count kecil, payload aman.
 // Cover ~6M blok ≈ 4 bulan di Base. Halve chunk kalau RPC reject.
@@ -637,15 +678,23 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
     }
   }
 
-  // (B1) Enumerate via MasterChef (PancakeSwap V3, etc) staked NFTs.
-  //      Method: scan NPM Transfer events FROM wallet TO masterchef → tokenIds → verify ownerOf still masterchef.
+  // (B1) Enumerate via MasterChef staked NFTs.
+  //      Primary: scan MasterChef Deposit events filtered by user (works even kalau pakai vfat/router proxy).
+  //      Fallback: scan NPM Transfer wallet→masterchef.
   for (const mc of getMasterchefs()) {
     try {
       const npm = getNpms().find(n => n.address.toLowerCase() === mc.npmHint.toLowerCase()) || { name: mc.name+' NPM', address: mc.npmHint, kind: mc.npmKind };
-      const tokenIds = await scanTransfersFromWalletTo(npm.address, walletAddress, mc.address);
-      diag.masterchefStaked[mc.name] = tokenIds.length;
+      // Primary: Deposit event scan
+      let tokenIds = await scanMasterChefDeposits(mc.address, walletAddress);
+      let method = 'deposit-event';
+      // Fallback: kalau Deposit event signature beda atau RPC gak support, coba Transfer scan
+      if (!tokenIds.length) {
+        const fallback = await scanTransfersFromWalletTo(npm.address, walletAddress, mc.address);
+        if (fallback.length) { tokenIds = fallback; method = 'transfer-fallback'; }
+      }
+      diag.masterchefStaked[mc.name] = `${tokenIds.length} (via ${method})`;
       for (const tokenId of tokenIds) {
-        // Verify ownerOf still masterchef (kalau udah unstake, di-skip — sudah ke-cover via balanceOf di (A))
+        // Verify ownerOf still masterchef (kalau udah unstake/withdraw, skip)
         try {
           const ownerResult = await ethCall(npm.address, '0x6352211e' + pad(toHex(tokenId)));
           const owner = ('0x' + ownerResult.replace('0x','').slice(-40)).toLowerCase();
