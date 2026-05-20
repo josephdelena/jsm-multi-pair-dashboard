@@ -3271,7 +3271,15 @@ function plRenderHistory() {
     const cPool = poolPnl >= 0 ? '#6ee7b7' : '#f87171';
     const cHedge = hedge >= 0 ? '#6ee7b7' : '#f87171';
     const cNet = net >= 0 ? '#6ee7b7' : '#f87171';
-    const ageStr = e.mintTimestamp ? plFormatAge(e.mintTimestamp) : '—';
+    const isClosedRow = e.source === 'closed-tx' || e.source === 'closed-manual';
+    // Untuk closed: durasi = closedAt - mintTimestamp (lama posisi exist)
+    // Untuk aktif: durasi = now - mintTimestamp
+    let ageStr = '—';
+    if (e.mintTimestamp) {
+      if (isClosedRow && e.closedAt) ageStr = plFormatDuration(e.closedAt - e.mintTimestamp);
+      else if (!isClosedRow) ageStr = plFormatAge(e.mintTimestamp);
+      else ageStr = plFormatAge(e.mintTimestamp); // closed tanpa closedAt fallback
+    }
     const poolShort = e.poolAddress ? e.poolAddress.slice(0,6)+'...'+e.poolAddress.slice(-4) : '—';
     const netPct = (typeof e.modal === 'number' && e.modal) ? (net / e.modal * 100) : null;
     return `
@@ -3301,30 +3309,50 @@ function plRenderHistory() {
 
   // Realized PnL breakdown per pair
   const closedByPair = {};
+  let totalDurationSec = 0, totalDurationCount = 0;
   for (const e of arr) {
     if (e.source !== 'closed-tx' && e.source !== 'closed-manual') continue;
     const key = (e.pair || '?') + '||' + (e.chain || '?');
-    if (!closedByPair[key]) closedByPair[key] = { pair: e.pair || '?', chain: e.chain || '?', count: 0, modal: 0, poolPnl: 0, hedgePnl: 0, lastClosedAt: 0 };
+    if (!closedByPair[key]) closedByPair[key] = { pair: e.pair || '?', chain: e.chain || '?', count: 0, modal: 0, poolPnl: 0, hedgePnl: 0, lastClosedAt: 0, durationSum: 0, durationCount: 0 };
     closedByPair[key].count++;
     if (typeof e.modal === 'number') closedByPair[key].modal += e.modal;
     if (typeof e.pnlUsd === 'number') closedByPair[key].poolPnl += e.pnlUsd;
     if (typeof e.hedgePnl === 'number') closedByPair[key].hedgePnl += e.hedgePnl;
     if (e.closedAt && e.closedAt > closedByPair[key].lastClosedAt) closedByPair[key].lastClosedAt = e.closedAt;
+    if (e.closedAt && e.mintTimestamp) {
+      const dur = e.closedAt - e.mintTimestamp;
+      if (dur > 0) {
+        closedByPair[key].durationSum += dur;
+        closedByPair[key].durationCount++;
+        totalDurationSec += dur;
+        totalDurationCount++;
+      }
+    }
   }
   const realizedRows = Object.values(closedByPair).sort((a, b) => b.lastClosedAt - a.lastClosedAt).map(g => {
     const net = g.poolPnl + g.hedgePnl;
     const netPct = g.modal ? (net / g.modal * 100) : 0;
+    const poolPnlPct = g.modal ? (g.poolPnl / g.modal * 100) : 0;
     const c = net >= 0 ? '#6ee7b7' : '#f87171';
+    const cPool = g.poolPnl >= 0 ? '#6ee7b7' : '#f87171';
     const chainBadge = g.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 4px; border-radius:3px">OP</span>' : g.chain === 'arbitrum' ? '<span style="color:#60a5fa; font-size:9px; background:#0a1027; padding:1px 4px; border-radius:3px">ARB</span>' : g.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 4px; border-radius:3px">BASE</span>' : '';
+    const avgDur = g.durationCount ? plFormatDuration(g.durationSum / g.durationCount) : '—';
+    const totalDur = g.durationCount ? plFormatDuration(g.durationSum) : '—';
+    const durStr = g.count > 1 ? `<span style="color:#d0d8e0">avg ${avgDur}</span><br><span style="font-size:9px; color:#6b7280">total ${totalDur}</span>` : avgDur;
     return `<tr style="border-bottom:1px solid #1f2638">
       <td style="padding:8px; font-size:11px; color:#d0d8e0; font-weight:600">${g.pair} ${chainBadge}</td>
       <td style="padding:8px; font-size:11px; text-align:center; color:#9ca3af">${g.count}</td>
       <td style="padding:8px; font-size:11px; text-align:right; color:#fbbf24; font-family:monospace">$${g.modal.toFixed(2)}</td>
-      <td style="padding:8px; font-size:11px; text-align:right; color:${g.poolPnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace">${sgn(g.poolPnl)}$${g.poolPnl.toFixed(2)}</td>
+      <td style="padding:8px; font-size:11px; text-align:right; color:${cPool}; font-family:monospace">${sgn(g.poolPnl)}$${g.poolPnl.toFixed(2)}<br><span style="font-size:9px">${sgn(g.poolPnl)}${poolPnlPct.toFixed(2)}%</span></td>
       <td style="padding:8px; font-size:11px; text-align:right; color:${g.hedgePnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace">${sgn(g.hedgePnl)}$${g.hedgePnl.toFixed(2)}</td>
       <td style="padding:8px; font-size:12px; text-align:right; color:${c}; font-family:monospace; font-weight:700; background:#0a0e16">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:9px; font-weight:400">${sgn(net)}${netPct.toFixed(2)}%</span></td>
+      <td style="padding:8px; font-size:10px; text-align:left; color:#9ca3af; white-space:nowrap">${durStr}</td>
     </tr>`;
   }).join('');
+  const grandPoolPct = closedModal ? (closedPoolPnl / closedModal * 100) : 0;
+  const grandNetPct = closedModal ? (closedNet / closedModal * 100) : 0;
+  const grandAvgDur = totalDurationCount ? plFormatDuration(totalDurationSec / totalDurationCount) : '—';
+  const grandTotalDur = totalDurationCount ? plFormatDuration(totalDurationSec) : '—';
   const realizedSection = closedCount > 0 ? `
     <div style="background:#0a0e16; padding:12px 14px; border-bottom:1px solid #1f2638">
       <div style="font-size:11px; color:#a78bfa; font-weight:600; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em">📊 Realized PnL — Breakdown per Pool</div>
@@ -3333,18 +3361,20 @@ function plRenderHistory() {
           <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:left">Pool</th>
           <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:center">Closed</th>
           <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Modal</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Pool PnL</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Pool PnL ($/%)</th>
           <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Hedge</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">NET</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">NET ($/%)</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:left">Umur Posisi</th>
         </tr></thead>
         <tbody>${realizedRows}</tbody>
         <tfoot style="background:#131826"><tr style="border-top:2px solid #064e3b">
           <td style="padding:8px; font-size:11px; color:#a78bfa; font-weight:700">TOTAL REALIZED</td>
           <td style="padding:8px; font-size:11px; text-align:center; color:#d0d8e0; font-weight:700">${closedCount}</td>
           <td style="padding:8px; font-size:11px; text-align:right; color:#fbbf24; font-family:monospace; font-weight:700">$${closedModal.toFixed(2)}</td>
-          <td style="padding:8px; font-size:11px; text-align:right; color:${closedPoolPnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace; font-weight:700">${sgn(closedPoolPnl)}$${closedPoolPnl.toFixed(2)}</td>
+          <td style="padding:8px; font-size:11px; text-align:right; color:${closedPoolPnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace; font-weight:700">${sgn(closedPoolPnl)}$${closedPoolPnl.toFixed(2)}<br><span style="font-size:9px">${sgn(closedPoolPnl)}${grandPoolPct.toFixed(2)}%</span></td>
           <td style="padding:8px; font-size:11px; text-align:right; color:${closedHedge >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace; font-weight:700">${sgn(closedHedge)}$${closedHedge.toFixed(2)}</td>
-          <td style="padding:8px; font-size:13px; text-align:right; color:${closedNetColor}; font-family:monospace; font-weight:700; background:#0a1a14">${sgn(closedNet)}$${closedNet.toFixed(2)}</td>
+          <td style="padding:8px; font-size:13px; text-align:right; color:${closedNetColor}; font-family:monospace; font-weight:700; background:#0a1a14">${sgn(closedNet)}$${closedNet.toFixed(2)}<br><span style="font-size:10px; font-weight:400">${sgn(closedNet)}${grandNetPct.toFixed(2)}%</span></td>
+          <td style="padding:8px; font-size:10px; text-align:left; color:#d0d8e0; white-space:nowrap">${totalDurationCount > 1 ? `avg ${grandAvgDur}<br><span style="font-size:9px; color:#6b7280">total ${grandTotalDur}</span>` : grandAvgDur}</td>
         </tr></tfoot>
       </table>
     </div>` : '';
@@ -3394,7 +3424,12 @@ function plRenderHistory() {
 // Format umur dari unix timestamp jadi "3 jam 12 menit" / "2 hari 5 jam" / "47 menit"
 function plFormatAge(unixSec) {
   if (!unixSec) return '—';
-  const diff = Math.max(0, Math.floor(Date.now() / 1000) - unixSec);
+  return plFormatDuration(Math.floor(Date.now() / 1000) - unixSec);
+}
+
+// Format durasi (seconds) jadi human-readable
+function plFormatDuration(diffSec) {
+  const diff = Math.max(0, Math.floor(diffSec));
   const d = Math.floor(diff / 86400);
   const h = Math.floor((diff % 86400) / 3600);
   const m = Math.floor((diff % 3600) / 60);
