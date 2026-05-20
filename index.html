@@ -239,6 +239,7 @@
     <button class="tab" data-tab="calc" onclick="switchTab('calc')">🧮 Calculator</button>
     <button class="tab" data-tab="vircalc" onclick="switchTab('vircalc')">🚀 VIRCALC</button>
     <button class="tab" data-tab="solcalc" onclick="switchTab('solcalc')">☀️ SOLCALC</button>
+    <button class="tab" data-tab="ethcalc" onclick="switchTab('ethcalc')">⟠ ETHCALC</button>
   </div>
 
   <!-- ── TAB: DASHBOARD ── -->
@@ -808,6 +809,151 @@
     </div>
   </div><!-- /tab-solcalc -->
 
+  <!-- ── TAB: ETHCALC (ETH Cascade v4) ── -->
+  <div class="tab-pane" id="tab-ethcalc">
+    <div style="background:#0a1f1a; border:1px solid #6ee7b7; border-radius:8px; padding:14px; margin-bottom:14px">
+      <div style="font-size:12px; color:#6ee7b7; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:4px">⟠ ETH Cascade Dynamic v4</div>
+      <div style="font-size:11px; color:#9ca3af">Asym 1/6 · H1 trigger -5% dari entry · Cascade -1.1% · TP -0.5% · SL +0.2% · Emergency floor Pa × 1.005 · Backtest 120h PROFIT +$124 (+0.58%/cycle)</div>
+    </div>
+
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Input</div>
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px">
+        <div class="field"><label>Modal LP ($)</label><input type="number" id="ec_modal" value="1000" oninput="ethcalc()"></div>
+        <div class="field"><label>Entry Price ($)</label><input type="number" id="ec_entry" value="2300" step="1" oninput="ethcalc()"></div>
+        <div class="field"><label>Leverage (×)</label><input type="number" id="ec_lev" value="10" oninput="ethcalc()"></div>
+        <div class="field"><label>Buffer Margin (%)</label><input type="number" id="ec_buf" value="20" step="5" oninput="ethcalc()"></div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:10px">
+        <div class="field"><label>Range Atas Pb (%)</label><input type="number" id="ec_rup" value="1.0" step="0.1" oninput="ethcalc()"></div>
+        <div class="field"><label>Range Bawah Pa (%)</label><input type="number" id="ec_rdn" value="6.0" step="0.1" oninput="ethcalc()"></div>
+        <div class="field"><label>H1 Trigger (%)</label><input type="number" id="ec_h1trig" value="5.0" step="0.1" oninput="ethcalc()"></div>
+        <div class="field"><label>Cascade Step (%)</label><input type="number" id="ec_step" value="1.1" step="0.1" oninput="ethcalc()"></div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:10px">
+        <div class="field"><label>TP (%)</label><input type="number" id="ec_tp" value="0.5" step="0.1" oninput="ethcalc()"></div>
+        <div class="field"><label>SL (%)</label><input type="number" id="ec_sl" value="0.2" step="0.05" oninput="ethcalc()"></div>
+        <div class="field"><label>Emergency Floor (% atas Pa)</label><input type="number" id="ec_floor" value="0.5" step="0.1" oninput="ethcalc()"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn" onclick="ecLoadLive()" style="width:100%">↻ Pakai harga live ETH</button></div>
+      </div>
+      <div style="margin-top:14px; padding:12px; background:#1a1408; border:1px solid #f59e0b; border-radius:6px">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px">
+          <input type="checkbox" id="ec_existing" onchange="ethcalc()" style="width:16px; height:16px; cursor:pointer">
+          <label for="ec_existing" style="color:#fbbf24; font-size:12px; font-weight:600; cursor:pointer">🚨 RESCUE MODE — LP udah running</label>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px">
+          <div class="field"><label>Current Price ($)</label><input type="number" id="ec_curprice" value="2300" step="1" oninput="ethcalc()"></div>
+          <div class="field"><label>LP Value Sekarang ($)</label><input type="number" id="ec_curlpval" value="0" step="0.01" placeholder="Auto-calc kalau kosong" oninput="ethcalc()"></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px; margin-bottom:14px">
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">LP Range</div>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Batas Atas (Pb)</td><td id="ec_pb" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#d0d8e0; padding:6px 0">Entry (P0)</td><td id="ec_p0" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Batas Bawah (Pa)</td><td id="ec_pa" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+          <tr style="border-top:1px solid #1f2638"><td style="color:#9ca3af; padding:8px 0; font-size:11px">LP Loss @ Pa</td><td id="ec_lploss" style="text-align:right; padding:8px 0; color:#f87171">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">LP Gain @ Pb</td><td id="ec_lpgain" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+        </table>
+      </div>
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Emergency Floor</div>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Floor Price</td><td id="ec_floorp" style="text-align:right; padding:6px 0; color:#fbbf24">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0; font-size:11px">% atas Pa</td><td id="ec_floorpct" style="text-align:right; padding:6px 0">—</td></tr>
+        </table>
+      </div>
+      <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px">
+        <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Total Capital</div>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Modal LP</td><td id="ec_mlp" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Max Collat GMX</td><td id="ec_mcol" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Buffer Margin</td><td id="ec_mbuf" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr style="border-top:1px solid #1f2638"><td style="color:#fbbf24; padding:8px 0; font-weight:600">SIAPKAN TOTAL</td><td id="ec_mtot" style="text-align:right; padding:8px 0; color:#fbbf24; font-weight:700">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="background:#131826; border:1px solid #f59e0b; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#f59e0b; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">🎯 Hedge 1 (Pre-Set)</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 Trigger</td><td id="ec_h1trigp" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 TP</td><td id="ec_h1tpp" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🔴 SL</td><td id="ec_h1slp" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional Short</td><td id="ec_h1n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral 10×</td><td id="ec_h1c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Tokens Short</td><td id="ec_h1tok" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Profit kalau TP</td><td id="ec_h1tppnl" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#f87171; padding:6px 0; font-size:11px">Rugi kalau SL</td><td id="ec_h1slpnl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="background:#131826; border:1px solid #6ee7b7; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px">Hedge 2 — Path A: H1 TP</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 Trigger H2</td><td id="ec_h2a_trig" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 TP H2</td><td id="ec_h2a_tp" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🔴 SL H2</td><td id="ec_h2a_sl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional</td><td id="ec_h2a_n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral</td><td id="ec_h2a_c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Profit close Pa</td><td id="ec_h2a_paprofit" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#f87171; padding:6px 0; font-size:11px">Rugi kalau SL</td><td id="ec_h2a_slpnl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="background:#131826; border:2px solid #fbbf24; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:12px; color:#fbbf24; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px">🛌 Emergency Hedge — Sleep-Proof</div>
+      <div style="font-size:11px; color:#9ca3af; margin-bottom:12px">Pre-armed, auto-fire kalau drop ke batas bawah. HOLD permanent (gak ada TP/SL).</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🎯 Trigger</td><td id="ec_em_trig" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">TP</td><td style="text-align:right; padding:6px 0; color:#6b7280">— (NONE)</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">SL</td><td style="text-align:right; padding:6px 0; color:#6b7280">— (NONE)</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional Short</td><td id="ec_em_n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral 10×</td><td id="ec_em_c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Lock NET past Pa</td><td style="text-align:right; padding:6px 0; color:#6ee7b7">$0 untuk drop apapun ✓</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="background:#131826; border:1px solid #f87171; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#f87171; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px">Hedge 2 — Path B: H1 SL whipsaw</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 Trigger H2</td><td id="ec_h2b_trig" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🟢 TP H2</td><td id="ec_h2b_tp" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">🔴 SL H2</td><td id="ec_h2b_sl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional</td><td id="ec_h2b_n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral</td><td id="ec_h2b_c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Profit close Pa</td><td id="ec_h2b_paprofit" style="text-align:right; padding:6px 0; color:#6ee7b7">—</td></tr>
+          <tr><td style="color:#f87171; padding:6px 0; font-size:11px">Rugi kalau SL</td><td id="ec_h2b_slpnl" style="text-align:right; padding:6px 0; color:#f87171">—</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="background:#131826; border:1px solid #6ee7b7; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#6ee7b7; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">📋 Cheat Sheet</div>
+      <div style="background:#0f1422; border-radius:4px; padding:12px; font-family:monospace; font-size:11px; color:#d0d8e0">
+        <div id="ec_cheatsheet" style="white-space:pre-line; line-height:1.7"></div>
+      </div>
+    </div>
+  </div><!-- /tab-ethcalc -->
+
 </div><!-- /container -->
 
 <script>
@@ -1275,7 +1421,187 @@ function switchTab(name) {
   if (name === 'calc') kCalc();
   if (name === 'vircalc') vircalc();
   if (name === 'solcalc') solcalc();
+  if (name === 'ethcalc') ethcalc();
 }
+
+// ── ETHCALC (ETH Cascade Dynamic v4 — Asym 1/6) ──
+function ecFmt(v, decs) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  if (decs === undefined) decs = Math.abs(v) >= 1000 ? 2 : Math.abs(v) >= 10 ? 2 : Math.abs(v) >= 1 ? 4 : 6;
+  return v.toLocaleString('en-US', { minimumFractionDigits: decs, maximumFractionDigits: decs });
+}
+
+function ecLoadLive() {
+  const symbol = PAIRS.ETH?.symbol;
+  if (symbol && prices[symbol]) {
+    document.getElementById('ec_entry').value = prices[symbol];
+    document.getElementById('ec_curprice').value = prices[symbol];
+    ethcalc();
+  } else {
+    alert('Harga live ETH belum loaded. Klik ↻ Refresh dulu.');
+  }
+}
+
+function ethcalc() {
+  const modal = parseFloat(document.getElementById('ec_modal').value) || 0;
+  const P0 = parseFloat(document.getElementById('ec_entry').value) || 0;
+  const lev = parseFloat(document.getElementById('ec_lev').value) || 10;
+  const bufPct = parseFloat(document.getElementById('ec_buf').value) || 20;
+  const rUp = parseFloat(document.getElementById('ec_rup').value) || 0;
+  const rDn = parseFloat(document.getElementById('ec_rdn').value) || 0;
+  const h1trigPct = parseFloat(document.getElementById('ec_h1trig').value) || 0;
+  const stepPct = parseFloat(document.getElementById('ec_step').value) || 0;
+  const tpPct = parseFloat(document.getElementById('ec_tp').value) || 0;
+  const slPct = parseFloat(document.getElementById('ec_sl').value) || 0;
+  const floorPct = parseFloat(document.getElementById('ec_floor').value) || 0;
+
+  if (modal <= 0 || P0 <= 0) return;
+
+  const isRescue = document.getElementById('ec_existing').checked;
+  const Pcur = isRescue ? (parseFloat(document.getElementById('ec_curprice').value) || P0) : P0;
+
+  const Pa = P0 * (1 - rDn/100);
+  const Pb = P0 * (1 + rUp/100);
+  const floor = Pa * (1 + floorPct/100);
+
+  const sqrtP0 = Math.sqrt(P0);
+  const sqrtPa = Math.sqrt(Pa);
+  const sqrtPb = Math.sqrt(Pb);
+  const denomL = 2 * sqrtP0 - P0/sqrtPb - sqrtPa;
+  const L = modal / denomL;
+
+  const lpV = (P) => {
+    if (P >= Pb) return L * (sqrtPb - sqrtPa);
+    if (P <= Pa) return L * (1/sqrtPa - 1/sqrtPb) * P;
+    return L * (2*Math.sqrt(P) - P/sqrtPb - sqrtPa);
+  };
+  const lpLossAtPa = lpV(Pa) - modal;
+  const lpGainAtPb = lpV(Pb) - modal;
+
+  const lpValCurAuto = lpV(Pcur);
+  const lpValCurManual = parseFloat(document.getElementById('ec_curlpval').value) || 0;
+  const lpValCur = (isRescue && lpValCurManual > 0) ? lpValCurManual : lpValCurAuto;
+  const lpValAtPa = lpV(Pa);
+  const targetH1 = isRescue ? (lpValCur - lpValAtPa) : -lpLossAtPa;
+
+  let Pt1;
+  if (isRescue) {
+    const cascadeFromCur = Pcur * (1 - h1trigPct/100);
+    if (cascadeFromCur > Pa) {
+      Pt1 = Math.max(cascadeFromCur, floor);
+    } else {
+      Pt1 = Math.max(floor, Pcur > floor ? floor : Pcur);
+    }
+  } else {
+    Pt1 = P0 * (1 - h1trigPct/100);
+  }
+
+  const H1_TP = Pt1 * (1 - tpPct/100);
+  const H1_SL = Pt1 * (1 + slPct/100);
+  const N1 = Pt1 > Pa ? targetH1 * Pt1 / (Pt1 - Pa) : 0;
+  const collat1 = N1 / lev;
+  const tokens1 = N1 / Pt1;
+  const h1TpPnl = N1 * tpPct / 100;
+  const h1SlPnl = -N1 * slPct / 100;
+
+  const bankedA = h1TpPnl;
+  const Pt2_A = Math.max(H1_TP * (1 - stepPct/100), floor);
+  const H2A_TP = Pt2_A * (1 - tpPct/100);
+  const H2A_SL = Pt2_A * (1 + slPct/100);
+  const targetH2A = targetH1 - bankedA;
+  const N2A = Pt2_A > Pa ? targetH2A * Pt2_A / (Pt2_A - Pa) : 0;
+  const h2A_paProfit = N2A * (Pt2_A - Pa) / Pt2_A;
+
+  const bankedB = h1SlPnl;
+  const Pt2_B = Math.max(H1_SL * (1 - stepPct/100), floor);
+  const H2B_TP = Pt2_B * (1 - tpPct/100);
+  const H2B_SL = Pt2_B * (1 + slPct/100);
+  const targetH2B = targetH1 - bankedB;
+  const N2B = Pt2_B > Pa ? targetH2B * Pt2_B / (Pt2_B - Pa) : 0;
+  const h2B_paProfit = N2B * (Pt2_B - Pa) / Pt2_B;
+
+  const x_at_Pa = L * (1/sqrtPa - 1/sqrtPb);
+  const N_emergency = x_at_Pa * Pa;
+  const collat_emergency = N_emergency / lev;
+
+  const maxCollat = Math.max(collat1, N2A/lev, N2B/lev) + collat_emergency;
+  const buffer = (modal + maxCollat) * bufPct / 100;
+  const totalCapital = modal + maxCollat + buffer;
+
+  const dec = P0 < 1 ? 4 : P0 < 100 ? 3 : 2;
+
+  document.getElementById('ec_pb').textContent = `$${ecFmt(Pb, dec)}  (+${rUp}%)`;
+  document.getElementById('ec_p0').textContent = `$${ecFmt(P0, dec)}`;
+  document.getElementById('ec_pa').textContent = `$${ecFmt(Pa, dec)}  (-${rDn}%)`;
+  document.getElementById('ec_lploss').textContent = `$${ecFmt(lpLossAtPa, 2)}`;
+  document.getElementById('ec_lpgain').textContent = `+$${ecFmt(lpGainAtPb, 2)}`;
+  document.getElementById('ec_floorp').textContent = `$${ecFmt(floor, dec)}`;
+  document.getElementById('ec_floorpct').textContent = `+${floorPct}% (= Pa × ${(1+floorPct/100).toFixed(3)})`;
+
+  document.getElementById('ec_mlp').textContent = `$${ecFmt(modal, 2)}`;
+  document.getElementById('ec_mcol').textContent = `$${ecFmt(maxCollat, 2)}`;
+  document.getElementById('ec_mbuf').textContent = `$${ecFmt(buffer, 2)}  (${bufPct}%)`;
+  document.getElementById('ec_mtot').textContent = `$${ecFmt(totalCapital, 2)}`;
+
+  document.getElementById('ec_h1trigp').textContent = `$${ecFmt(Pt1, dec)}  (-${h1trigPct}%)`;
+  document.getElementById('ec_h1tpp').textContent = `$${ecFmt(H1_TP, dec)}  (-${tpPct}%)`;
+  document.getElementById('ec_h1slp').textContent = `$${ecFmt(H1_SL, dec)}  (+${slPct}%)`;
+  document.getElementById('ec_h1n').textContent = `$${ecFmt(N1, 2)}`;
+  document.getElementById('ec_h1c').textContent = `$${ecFmt(collat1, 2)}`;
+  document.getElementById('ec_h1tok').textContent = `${ecFmt(tokens1, 4)} ETH`;
+  document.getElementById('ec_h1tppnl').textContent = `+$${ecFmt(h1TpPnl, 2)}`;
+  document.getElementById('ec_h1slpnl').textContent = `-$${ecFmt(Math.abs(h1SlPnl), 2)}`;
+
+  document.getElementById('ec_h2a_trig').textContent = `$${ecFmt(Pt2_A, dec)}`;
+  document.getElementById('ec_h2a_tp').textContent = `$${ecFmt(H2A_TP, dec)}`;
+  document.getElementById('ec_h2a_sl').textContent = `$${ecFmt(H2A_SL, dec)}`;
+  document.getElementById('ec_h2a_n').textContent = `$${ecFmt(N2A, 2)}`;
+  document.getElementById('ec_h2a_c').textContent = `$${ecFmt(N2A/lev, 2)}`;
+  document.getElementById('ec_h2a_paprofit').textContent = `+$${ecFmt(h2A_paProfit, 2)}`;
+  document.getElementById('ec_h2a_slpnl').textContent = `-$${ecFmt(Math.abs(N2A * slPct / 100), 2)}`;
+
+  document.getElementById('ec_em_trig').textContent = `$${ecFmt(floor, dec)}  (Pa × 1.005)`;
+  document.getElementById('ec_em_n').textContent = `$${ecFmt(N_emergency, 2)}`;
+  document.getElementById('ec_em_c').textContent = `$${ecFmt(collat_emergency, 2)}`;
+
+  document.getElementById('ec_h2b_trig').textContent = `$${ecFmt(Pt2_B, dec)}`;
+  document.getElementById('ec_h2b_tp').textContent = `$${ecFmt(H2B_TP, dec)}`;
+  document.getElementById('ec_h2b_sl').textContent = `$${ecFmt(H2B_SL, dec)}`;
+  document.getElementById('ec_h2b_n').textContent = `$${ecFmt(N2B, 2)}`;
+  document.getElementById('ec_h2b_c').textContent = `$${ecFmt(N2B/lev, 2)}`;
+  document.getElementById('ec_h2b_paprofit').textContent = `+$${ecFmt(h2B_paProfit, 2)}`;
+  document.getElementById('ec_h2b_slpnl').textContent = `-$${ecFmt(Math.abs(N2B * slPct / 100), 2)}`;
+
+  const cs = `
+[1] OPEN LP @ $${ecFmt(P0, dec)}
+    Pool: Aerodrome CL100-WETH/USDC (0.008% fee) atau Uniswap V3 Arbitrum
+    Range: $${ecFmt(Pa, dec)} - $${ecFmt(Pb, dec)}
+    Amount: $${ecFmt(modal, 2)}
+
+[2] OPEN GMX/Hyperliquid STOP-MARKET H1
+    Short ETH-PERP, Trigger: $${ecFmt(Pt1, dec)} (-${h1trigPct}%)
+    Notional: $${ecFmt(N1, 2)} (~${ecFmt(tokens1, 4)} ETH)
+    Collat: $${ecFmt(collat1, 2)} (lev ${lev}×)
+    TP: $${ecFmt(H1_TP, dec)}, SL: $${ecFmt(H1_SL, dec)}
+
+[3] 🛌 PRE-ARM EMERGENCY HEDGE
+    Short stop-market, Trigger: $${ecFmt(floor, dec)} (= Pa × 1.005)
+    Notional: $${ecFmt(N_emergency, 2)}, Collat: $${ecFmt(collat_emergency, 2)}
+    NO TP, NO SL, HOLD permanen
+
+[4] SETELAH H1 FIRE:
+    ─ Path A (H1 TP): H2 trigger $${ecFmt(Pt2_A, dec)}, N $${ecFmt(N2A, 2)}
+    ─ Path B (H1 SL): H2 trigger $${ecFmt(Pt2_B, dec)}, N $${ecFmt(N2B, 2)}
+
+[5] EXIT CYCLE:
+    ─ Tembus Pb $${ecFmt(Pb, dec)}: LP exit, cancel hedge queued
+    ─ Hit Pa $${ecFmt(Pa, dec)}: Close LP + hedge bareng
+
+[6] CAPITAL: $${ecFmt(totalCapital, 2)} (LP ${ecFmt(modal,0)} + collat ${ecFmt(maxCollat,0)} + buffer ${ecFmt(buffer,0)})
+  `.trim();
+  document.getElementById('ec_cheatsheet').textContent = cs;
+}
+
 
 // ── SOLCALC (SOL Cascade Dynamic v2 — Asym 1/4) ──
 function scFmt(v, decs) {
