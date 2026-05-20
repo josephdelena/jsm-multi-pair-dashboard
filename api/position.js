@@ -631,11 +631,11 @@ async function readGaugeStakedByIndex(gaugeAddress, wallet, idx) {
 
 // ── Enumerate user's NFTs on a NPM, filter by pool match ──
 // Mengecek: (a) NFT yg masih di-hold wallet di NPM, dan (b) NFT yg di-stake ke gauge (kalau gauge address ada)
-async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAddress) {
+async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAddress, manualTokenIds) {
   const results = [];
   const seenTokenIds = new Set();
   const candidates = []; // log semua NFT yg di-enumerate (untuk diag kalau gak ketemu match)
-  const diag = { npmCounts: {}, gaugeStakedCount: null, gaugeError: null, masterchefStaked: {}, candidates };
+  const diag = { npmCounts: {}, gaugeStakedCount: null, gaugeError: null, masterchefStaked: {}, manualTokenIds: [], candidates };
 
   // Helper: check 1 tokenId di NPM mana → kalau match pool, tambah ke results
   // Match logic per kind:
@@ -660,6 +660,33 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
     });
     if (!matched) return;
     results.push({ tokenId, npmAddress: npm.address, npmName: npm.name, npmKind: npm.kind, source, position: pos });
+  }
+
+  // (0) Manual token IDs — untuk kasus vfat zap (NFT di-mint langsung ke proxy, gak pernah di wallet user)
+  if (Array.isArray(manualTokenIds) && manualTokenIds.length) {
+    for (const tid of manualTokenIds) {
+      const tokenId = String(tid).trim();
+      if (!tokenId || !/^\d+$/.test(tokenId)) continue;
+      // Cari NPM mana yg punya tokenId ini via ownerOf
+      let foundNpm = null, ownerAddr = null;
+      for (const npm of getNpms()) {
+        try {
+          const r = await ethCall(npm.address, '0x6352211e' + pad(toHex(tokenId)));
+          ownerAddr = ('0x' + r.replace('0x','').slice(-40)).toLowerCase();
+          if (ownerAddr && !/^0x0+$/.test(ownerAddr.replace('0x',''))) { foundNpm = npm; break; }
+        } catch { /* not in this NPM, try next */ }
+      }
+      if (!foundNpm) { diag.manualTokenIds.push({ tokenId, error: 'tokenId gak ditemukan di NPM manapun di chain ini' }); continue; }
+      // Tentukan source berdasarkan owner
+      let source = 'manual';
+      const masterchefs = getMasterchefs();
+      const isMasterchef = masterchefs.find(mc => mc.address.toLowerCase() === ownerAddr);
+      if (isMasterchef) source = 'masterchef:' + isMasterchef.name.split(' ')[0];
+      else if (ownerAddr === walletAddress.toLowerCase()) source = 'wallet';
+      else source = 'manual(owner:' + ownerAddr.slice(0,6) + '...' + ownerAddr.slice(-4) + ')';
+      diag.manualTokenIds.push({ tokenId, npm: foundNpm.name, owner: ownerAddr, source });
+      await tryMatch(foundNpm, tokenId, source);
+    }
   }
 
   // (A) Enumerate via NPM ownership (unstaked NFTs masih di wallet)
@@ -877,7 +904,7 @@ module.exports = async function handler(req, res) {
     let s=''; req.on('data', c => s += c); req.on('end', () => { try { r(JSON.parse(s)); } catch { r({}); } });
   });
 
-  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress, chain } = body;
+  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress, chain, manualTokenIds } = body;
   const chainKey = (chain && CHAINS[chain]) ? chain : 'base';
 
   return chainCtx.run({ chainKey }, async () => {
@@ -893,7 +920,7 @@ module.exports = async function handler(req, res) {
         let autoResolvedGauge = await resolveGaugeForPool(poolAddress);
         const userGauge = gaugeAddress && /^0x[a-fA-F0-9]{40}$/.test(gaugeAddress) ? gaugeAddress : null;
         let effectiveGauge = autoResolvedGauge || userGauge;
-        const { results: matches, diag } = await findPositionsByPool(walletAddress, poolAddress, poolMeta, effectiveGauge);
+        const { results: matches, diag } = await findPositionsByPool(walletAddress, poolAddress, poolMeta, effectiveGauge, manualTokenIds);
         diag.autoResolvedGauge = autoResolvedGauge;
         diag.effectiveGauge = effectiveGauge;
         if (!matches.length) {

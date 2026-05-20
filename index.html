@@ -1139,8 +1139,15 @@
           <input type="text" id="pl_gauge" placeholder="0x... (opsional)" style="font-family:monospace; font-size:12px">
         </div>
       </div>
+      <div style="display:grid; grid-template-columns: 1fr; gap:12px; margin-top:10px">
+        <div class="field">
+          <label>Token ID Manual (opsional, untuk kasus vfat zap)</label>
+          <input type="text" id="pl_tokenids" placeholder="mis. 2015334  atau  2015334, 731915 (pisah koma)" style="font-family:monospace; font-size:12px">
+        </div>
+      </div>
       <div style="margin-top:10px; font-size:10px; color:#6b7280">
-        💡 Tip: kalau pool nya Aerodrome SlipStream dan kamu mau lihat AERO emissions, isi gauge address. Kalau kosong, gauge skip.
+        💡 Tip 1: kalau pool Aerodrome/Velodrome dan mau lihat emissions, gauge auto-resolve dari Voter (kosongin aja).<br>
+        💡 Tip 2: kalau posisi di-stake via vfat zap (mint langsung ke proxy), wallet kamu gak own NFT — enumerate gak nemu. Paste NFT ID dari vfat/Pancake UI ke field Token ID Manual.
       </div>
     </div>
 
@@ -3252,6 +3259,8 @@ async function plLookup() {
   const pool = (document.getElementById('pl_pool').value || '').trim();
   let wallet = (document.getElementById('pl_wallet').value || '').trim();
   const gauge = (document.getElementById('pl_gauge').value || '').trim();
+  const tokenIdsRaw = (document.getElementById('pl_tokenids')?.value || '').trim();
+  const manualTokenIds = tokenIdsRaw ? tokenIdsRaw.split(/[,\s]+/).map(s => s.trim()).filter(s => /^\d+$/.test(s)) : [];
   const chain = document.getElementById('pl_chain').value || 'base';
   const chainLabel = chain === 'optimism' ? 'Optimism (Velodrome + Uniswap V3)'
                    : chain === 'arbitrum' ? 'Arbitrum (Uniswap V3 + PancakeSwap V3 + Camelot V3)'
@@ -3289,7 +3298,8 @@ async function plLookup() {
         chain,
         walletAddress: wallet,
         poolAddress: pool,
-        gaugeAddress: gauge || undefined
+        gaugeAddress: gauge || undefined,
+        manualTokenIds: manualTokenIds.length ? manualTokenIds : undefined
       })
     });
     const data = await r.json();
@@ -3311,6 +3321,12 @@ async function plLookup() {
       if (d.gaugeError) diagLines.push(`Gauge error: ${d.gaugeError}`);
       if (d.masterchefStaked) {
         for (const [name, count] of Object.entries(d.masterchefStaked)) diagLines.push(`${name} staked NFTs: ${count}`);
+      }
+      if (d.manualTokenIds && d.manualTokenIds.length) {
+        for (const r of d.manualTokenIds) {
+          if (r.error) diagLines.push(`Manual #${r.tokenId}: <span style="color:#f87171">${r.error}</span>`);
+          else diagLines.push(`Manual #${r.tokenId}: <span style="color:#6ee7b7">${r.npm} (${r.source})</span>`);
+        }
       }
 
       // Tampilkan candidates (NFT yg di-enumerate tapi gak match)
