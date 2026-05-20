@@ -3405,7 +3405,7 @@ function plTxRenderResults(data) {
         <div><span style="color:#9ca3af">NET:</span> <span style="color:${totalColor}; font-weight:700">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(2)}</span></div>
       </div>
       <div style="margin-top:10px; text-align:right">
-        <button onclick='plSaveClosed(${JSON.stringify({txHash:data.txHash, chain:data.chain, blockNumber:data.blockNumber, tokenFlows:data.tokenFlows, totalInUsd, totalOutUsd, tokenIds:data.tokenIds.map(t=>t.tokenId)}).replace(/'/g,"&apos;")})' style="background:#fbbf24; color:#1f1408; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px">💾 Save as Closed Position (assume close tx)</button>
+        <button onclick='plSaveClosed(${JSON.stringify({txHash:data.txHash, chain:data.chain, blockNumber:data.blockNumber, tokenFlows:data.tokenFlows, totalInUsd, totalOutUsd, tokenIds:data.tokenIds.map(t=>t.tokenId), eventTypes:data.tokenIds.flatMap(t=>(t.events||[]).map(e=>e.type))}).replace(/'/g,"&apos;")})' style="background:#fbbf24; color:#1f1408; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px">💾 Save as Closed Position (cek events dulu)</button>
       </div>
     </div>`;
   }
@@ -3425,7 +3425,14 @@ function plTxRenderResults(data) {
 }
 
 function plSaveClosed(snap) {
-  // Prompt user for modal entry + pair name (since close tx alone gak nampilin modal)
+  // Validation: detect open vs close tx based on events
+  const events = snap.eventTypes || [];
+  const hasDecrease = events.includes('DecreaseLiquidity') || events.includes('Collect');
+  const hasIncrease = events.includes('IncreaseLiquidity');
+  if (!hasDecrease && hasIncrease) {
+    if (!confirm('⚠ Tx ini kayaknya OPEN tx (cuma ada IncreaseLiquidity event, gak ada DecreaseLiquidity/Collect).\n\nKalau diSave sebagai Closed, exit value ke-record cuma dust yang balik ke wallet (kira-kira $0), bukan exit aktual.\n\nUntuk close position yang bener, paste hash CLOSE tx (yang ada DecreaseLiquidity).\n\nLanjut tetap? (Tidak disarankan)')) return;
+  }
+
   const tokenId = (snap.tokenIds || [])[0] || '';
   const flows = snap.tokenFlows || [];
   const rewardFlow = flows.find(f => /CAKE|VELO|AERO/i.test(f.symbol || ''));
