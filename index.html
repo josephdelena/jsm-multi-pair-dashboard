@@ -1152,6 +1152,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
         <div style="font-size:13px; color:#a78bfa; font-weight:700; letter-spacing:0.08em; text-transform:uppercase">📜 Position History</div>
         <div style="display:flex; gap:8px">
+          <button onclick="plRefreshAll()" style="background:#0a1a1f; color:#38bdf8; border:1px solid #075985; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600">🔄 Refresh All</button>
           <button onclick="plExportHistory()" style="background:#1f2638; color:#94a3b8; border:1px solid #2a3548; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:11px">📥 Export JSON</button>
           <button onclick="plClearHistory()" style="background:#1a0a0a; color:#f87171; border:1px solid #7f1d1d; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:11px">🗑 Clear All</button>
         </div>
@@ -2955,6 +2956,13 @@ function plInit() {
   if (gf && !gf.value) gf.value = lastGauge;
   if (cf && !cf.value) cf.value = lastChain;
   plRenderHistory();
+
+  // Auto-refresh kalau ada entries dan minimum 1 belum di-refresh dalam 5 menit
+  const arr = plLoadHistory();
+  if (arr.length) {
+    const stale = arr.some(e => !e.lastRefreshed || (Date.now() - e.lastRefreshed) > 5 * 60 * 1000);
+    if (stale) plRefreshAll(true); // silent — gak override status user
+  }
 }
 
 // ── History storage (localStorage) ──
@@ -3027,6 +3035,82 @@ function plExportHistory() {
   URL.revokeObjectURL(url);
 }
 
+// ── Auto-refresh history entries (re-fetch live PnL dari API) ──
+let _plRefreshing = false;
+
+async function plRefreshEntry(addedAt, silent) {
+  const arr = plLoadHistory();
+  const idx = arr.findIndex(x => x.addedAt === addedAt);
+  if (idx < 0) return false;
+  const e = arr[idx];
+  if (!e.poolAddress || !e.tokenId || !e.chain) {
+    if (!silent) plSetStatus(`⚠ Entry #${e.tokenId} gak punya pool/chain info — skip refresh.`, 'warn');
+    return false;
+  }
+  // Wallet cached (gauge auto-resolved server-side)
+  const wallet = localStorage.getItem('jsm-wallet');
+  if (!wallet) {
+    if (!silent) plSetStatus(`⚠ Wallet gak ada di cache — buka tab lookup sekali untuk set.`, 'warn');
+    return false;
+  }
+  try {
+    const r = await fetch('/api/position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'findByPool', chain: e.chain, walletAddress: wallet, poolAddress: e.poolAddress })
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok || !data.positions || !data.positions.length) return false;
+    // Match by tokenId
+    const p = data.positions.find(x => String(x.tokenId) === String(e.tokenId));
+    if (!p) return false;
+    // Re-compute curUsd, feesUsd, aeroUsd, pnlUsd
+    const s0 = (p.token0.symbol || '').toUpperCase();
+    const s1 = (p.token1.symbol || '').toUpperCase();
+    let curUsd = 0, feesUsd = 0;
+    if (s0 === 'USDC' || s0 === 'USDBC') { curUsd = p.token0.amount + (p.currentPrice ? p.token1.amount / p.currentPrice : 0); feesUsd = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0); }
+    else if (s1 === 'USDC' || s1 === 'USDBC') { curUsd = p.token1.amount + p.token0.amount * p.currentPrice; feesUsd = p.token1.fees + p.token0.fees * p.currentPrice; }
+    const rewardSymbol = p.rewardSymbol || e.rewardSymbol || 'AERO';
+    const aeroAmt = (typeof p.rewardAmount === 'number') ? p.rewardAmount : 0;
+    const aeroUsd = (typeof p.rewardUsd === 'number') ? p.rewardUsd : 0;
+    const modal = (p.originalDeposit && typeof p.originalDeposit.usdValue === 'number') ? p.originalDeposit.usdValue : e.modal;
+    const pnlUsd = modal ? (curUsd + feesUsd + aeroUsd - modal) : null;
+    const pnlPct = modal ? (pnlUsd / modal * 100) : null;
+    // Update entry (preserve hedgePnl + addedAt)
+    arr[idx] = {
+      ...e,
+      modal, curUsd, feesUsd, aeroAmt, aeroUsd, rewardSymbol,
+      pnlUsd, pnlPct,
+      inRange: p.inRange,
+      mintTimestamp: p.originalDeposit?.mintTimestamp || e.mintTimestamp,
+      lastRefreshed: Date.now()
+    };
+    plSaveHistory(arr);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function plRefreshAll(silent) {
+  if (_plRefreshing) return;
+  const arr = plLoadHistory();
+  if (!arr.length) return;
+  _plRefreshing = true;
+  if (!silent) plSetStatus(`⏳ Refresh ${arr.length} entries...`, 'warn');
+  let okCount = 0;
+  for (const e of arr) {
+    const ok = await plRefreshEntry(e.addedAt, true);
+    if (ok) okCount++;
+    plRenderHistory(); // re-render incremental biar user lihat progress
+  }
+  _plRefreshing = false;
+  if (!silent) {
+    plSetStatus(`✓ Refresh selesai: ${okCount}/${arr.length} berhasil.`, 'ok');
+    setTimeout(() => plSetStatus(''), 4000);
+  }
+}
+
 function plFmtDate(ts) {
   if (!ts) return '—';
   const d = new Date(ts);
@@ -3067,7 +3151,7 @@ function plRenderHistory() {
     const netPct = (typeof e.modal === 'number' && e.modal) ? (net / e.modal * 100) : null;
     return `
       <tr style="border-bottom:1px solid #1f2638">
-        <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}</td>
+        <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}${e.lastRefreshed ? `<br><span style="font-size:9px; color:#38bdf8">↻ ${plFormatAge(Math.floor(e.lastRefreshed/1000))} lalu</span>` : ''}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-weight:600">${e.pair || '—'} ${e.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 5px; border-radius:3px">OP</span>' : e.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 5px; border-radius:3px">BASE</span>' : ''}<br><span style="font-size:10px; color:#6b7280">#${e.tokenId} · ${poolShort}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:${e.source === 'staked' ? '#a78bfa' : '#94a3b8'}; white-space:nowrap">${e.source === 'staked' ? '🏦 Staked' : '👛 Wallet'}<br><span style="color:${e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${e.inRange ? '● IN' : '● OUT'}</span></td>
         <td style="padding:10px 8px; font-size:12px; color:#fbbf24; font-family:monospace; text-align:right">${typeof e.modal === 'number' ? '$'+e.modal.toFixed(2) : '—'}</td>
@@ -3077,8 +3161,9 @@ function plRenderHistory() {
         <td style="padding:10px 8px; font-size:13px; color:${cNet}; font-family:monospace; text-align:right; font-weight:700; background:#0a0e16">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:10px; font-weight:400">${netPct !== null ? sgn(net)+netPct.toFixed(2)+'%' : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' '+(e.rewardSymbol || 'AERO') : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${ageStr}</td>
-        <td style="padding:10px 8px; text-align:center">
-          <button onclick="plDeleteHistoryEntry(${e.addedAt})" style="background:transparent; color:#f87171; border:1px solid #7f1d1d; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:10px">🗑</button>
+        <td style="padding:10px 8px; text-align:center; white-space:nowrap">
+          <button onclick="(async()=>{await plRefreshEntry(${e.addedAt}); plRenderHistory();})()" style="background:transparent; color:#38bdf8; border:1px solid #075985; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px; margin-right:3px" title="Refresh entry ini">🔄</button>
+          <button onclick="plDeleteHistoryEntry(${e.addedAt})" style="background:transparent; color:#f87171; border:1px solid #7f1d1d; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px">🗑</button>
         </td>
       </tr>`;
   }).join('');
