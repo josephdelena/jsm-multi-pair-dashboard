@@ -27,7 +27,10 @@ const CHAINS = {
     ],
     voter: '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5', // Aerodrome Voter (cuma kenal Aerodrome pool)
     reward: { symbol: 'AERO', coingeckoId: 'aerodrome-finance' },
-    coingeckoPlatform: 'base'
+    coingeckoPlatform: 'base',
+    masterchefs: [
+      { name: 'PancakeSwap MasterChef V3', address: '0xC6A2Db661D5a5690172d8eB0a7DEA2d3008665A3', npmKind: 'uniswap', npmHint: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364' }
+    ]
   },
   optimism: {
     name: 'Optimism',
@@ -62,7 +65,10 @@ const CHAINS = {
     ],
     voter: null, // Uniswap/Pancake/Camelot gak ada Solidly-style Voter
     reward: null,
-    coingeckoPlatform: 'arbitrum-one'
+    coingeckoPlatform: 'arbitrum-one',
+    masterchefs: [
+      { name: 'PancakeSwap MasterChef V3', address: '0x5e09ACf80C0296740eC5d6F643005a4ef8DaA694', npmKind: 'uniswap', npmHint: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364' }
+    ]
   }
 };
 
@@ -96,6 +102,47 @@ function getCoingeckoPlatform() {
   const ctx = chainCtx.getStore();
   const key = (ctx && ctx.chainKey) || 'base';
   return CHAINS[key].coingeckoPlatform;
+}
+
+function getMasterchefs() {
+  const ctx = chainCtx.getStore();
+  const key = (ctx && ctx.chainKey) || 'base';
+  return CHAINS[key].masterchefs || [];
+}
+
+// ── Scan NPM Transfer events FROM wallet TO target (mis. masterchef) ──
+// Returns array of tokenIds. Chunked scan (max 10 chunks × 18k blocks ≈ 4 hari di Base).
+async function scanTransfersFromWalletTo(npmAddress, fromWallet, toAddress) {
+  const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const fromTopic = '0x' + pad(fromWallet.replace('0x','').toLowerCase());
+  const toTopic = '0x' + pad(toAddress.replace('0x','').toLowerCase());
+
+  const latestHex = await rpcCall('eth_blockNumber', []);
+  const latest = parseInt(latestHex, 16);
+  const CHUNK = 18000;
+  const MAX_CHUNKS = 10;
+  const tokenIds = new Set();
+
+  for (let c = 0; c < MAX_CHUNKS; c++) {
+    const toBlk = latest - (c * CHUNK);
+    const fromBlk = Math.max(0, toBlk - CHUNK + 1);
+    try {
+      const logs = await rpcCall('eth_getLogs', [{
+        address: npmAddress,
+        topics: [TRANSFER_TOPIC, fromTopic, toTopic],
+        fromBlock: '0x' + fromBlk.toString(16),
+        toBlock: '0x' + toBlk.toString(16)
+      }]);
+      if (logs && logs.length) {
+        for (const log of logs) {
+          // Transfer event: topics[3] = tokenId (indexed)
+          if (log.topics[3]) tokenIds.add(BigInt(log.topics[3]).toString());
+        }
+      }
+    } catch {}
+    if (fromBlk === 0) break;
+  }
+  return Array.from(tokenIds);
 }
 
 // ── Gauge.rewardToken() → token address (paling akurat) ──
@@ -536,7 +583,7 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
   const results = [];
   const seenTokenIds = new Set();
   const candidates = []; // log semua NFT yg di-enumerate (untuk diag kalau gak ketemu match)
-  const diag = { npmCounts: {}, gaugeStakedCount: null, gaugeError: null, candidates };
+  const diag = { npmCounts: {}, gaugeStakedCount: null, gaugeError: null, masterchefStaked: {}, candidates };
 
   // Helper: check 1 tokenId di NPM mana → kalau match pool, tambah ke results
   // Match logic per kind:
@@ -579,7 +626,28 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
     }
   }
 
-  // (B) Enumerate via gauge stakedByIndex (kalau gauge address dikasih).
+  // (B1) Enumerate via MasterChef (PancakeSwap V3, etc) staked NFTs.
+  //      Method: scan NPM Transfer events FROM wallet TO masterchef → tokenIds → verify ownerOf still masterchef.
+  for (const mc of getMasterchefs()) {
+    try {
+      const npm = getNpms().find(n => n.address.toLowerCase() === mc.npmHint.toLowerCase()) || { name: mc.name+' NPM', address: mc.npmHint, kind: mc.npmKind };
+      const tokenIds = await scanTransfersFromWalletTo(npm.address, walletAddress, mc.address);
+      diag.masterchefStaked[mc.name] = tokenIds.length;
+      for (const tokenId of tokenIds) {
+        // Verify ownerOf still masterchef (kalau udah unstake, di-skip — sudah ke-cover via balanceOf di (A))
+        try {
+          const ownerResult = await ethCall(npm.address, '0x6352211e' + pad(toHex(tokenId)));
+          const owner = ('0x' + ownerResult.replace('0x','').slice(-40)).toLowerCase();
+          if (owner !== mc.address.toLowerCase()) continue;
+        } catch { continue; }
+        await tryMatch(npm, tokenId, 'masterchef:' + mc.name.split(' ')[0]);
+      }
+    } catch (e) {
+      diag.masterchefStaked[mc.name] = 'err: ' + e.message;
+    }
+  }
+
+  // (B2) Enumerate via gauge stakedByIndex (kalau gauge address dikasih).
   //     NFT yg di-stake ownership-nya pindah ke gauge contract. Untuk baca positions(tokenId),
   //     pakai NPM canonical yg disebut gauge sendiri (gauge.nft() / .nfpm() / ...).
   //     Fallback ke hardcoded slipstream NPM kalau gauge.nft() gak tersedia.
