@@ -3219,14 +3219,24 @@ function plRenderHistory() {
     el.innerHTML = `<div style="background:#0d1219; border:1px dashed #1f2638; border-radius:6px; padding:20px; text-align:center; color:#6b7280; font-size:12px">Belum ada history. Klik "+ Tambah ke History" di hasil cari untuk record snapshot.</div>`;
     return;
   }
-  // Aggregate summary
-  let totModal = 0, totPoolPnl = 0, totHedge = 0;
+  // Aggregate summary — pisahin active vs closed
+  let totModal = 0, totPoolPnl = 0, totHedge = 0; // ACTIVE only
+  let closedModal = 0, closedPoolPnl = 0, closedHedge = 0, closedCount = 0;
   for (const e of arr) {
+    const isClosed = e.source === 'closed-tx';
+    if (isClosed) {
+      closedCount++;
+      if (typeof e.modal === 'number') closedModal += e.modal;
+      if (typeof e.pnlUsd === 'number') closedPoolPnl += e.pnlUsd;
+      if (typeof e.hedgePnl === 'number') closedHedge += e.hedgePnl;
+      continue;
+    }
     if (typeof e.modal === 'number') totModal += e.modal;
     if (typeof e.pnlUsd === 'number') totPoolPnl += e.pnlUsd;
     if (typeof e.hedgePnl === 'number') totHedge += e.hedgePnl;
   }
   const totNet = totPoolPnl + totHedge;
+  const closedNet = closedPoolPnl + closedHedge;
   const colorPool = totPoolPnl >= 0 ? '#6ee7b7' : '#f87171';
   const colorHedge = totHedge >= 0 ? '#6ee7b7' : '#f87171';
   const colorNet = totNet >= 0 ? '#6ee7b7' : '#f87171';
@@ -3261,15 +3271,26 @@ function plRenderHistory() {
       </tr>`;
   }).join('');
 
+  const activeCount = arr.length - closedCount;
+  const closedNetColor = closedNet >= 0 ? '#6ee7b7' : '#f87171';
+  const closedHeader = closedCount > 0 ? `
+      <div style="background:#0a0e16; padding:8px 14px; display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638; border-top:1px dashed #1f2638">
+        <div><div style="font-size:9px; color:#6b7280">🔒 Closed (${closedCount})</div></div>
+        <div><div style="font-size:9px; color:#6b7280">Modal (realized)</div><div style="font-size:13px; color:#9ca3af">$${closedModal.toFixed(2)}</div></div>
+        <div><div style="font-size:9px; color:#6b7280">Realized Pool PnL</div><div style="font-size:13px; color:${closedPoolPnl >= 0 ? '#6ee7b7' : '#f87171'}">${sgn(closedPoolPnl)}$${closedPoolPnl.toFixed(2)}</div></div>
+        <div><div style="font-size:9px; color:#6b7280">Realized Hedge</div><div style="font-size:13px; color:${closedHedge >= 0 ? '#6ee7b7' : '#f87171'}">${sgn(closedHedge)}$${closedHedge.toFixed(2)}</div></div>
+        <div><div style="font-size:9px; color:#6b7280">Realized NET</div><div style="font-size:14px; color:${closedNetColor}; font-weight:600">${sgn(closedNet)}$${closedNet.toFixed(2)}</div></div>
+      </div>` : '';
   el.innerHTML = `
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; overflow:hidden">
       <div style="background:#0d1219; padding:10px 14px; display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638">
-        <div><div style="font-size:10px; color:#9ca3af">Total Entries</div><div style="font-size:16px; color:#d0d8e0; font-weight:700">${arr.length}</div></div>
-        <div><div style="font-size:10px; color:#9ca3af">Total Modal</div><div style="font-size:16px; color:#fbbf24; font-weight:700">$${totModal.toFixed(2)}</div></div>
-        <div><div style="font-size:10px; color:#9ca3af">Pool PnL</div><div style="font-size:16px; color:${colorPool}; font-weight:700">${sgn(totPoolPnl)}$${totPoolPnl.toFixed(2)}</div></div>
-        <div><div style="font-size:10px; color:#9ca3af">Hedge PnL (GMX)</div><div style="font-size:16px; color:${colorHedge}; font-weight:700">${sgn(totHedge)}$${totHedge.toFixed(2)}</div></div>
-        <div style="background:#0a1a14; padding:6px 10px; border-radius:5px; border:1px solid ${totNet >= 0 ? '#064e3b' : '#7f1d1d'}"><div style="font-size:10px; color:#9ca3af">NET TOTAL</div><div style="font-size:18px; color:${colorNet}; font-weight:700">${sgn(totNet)}$${totNet.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Aktif / Total</div><div style="font-size:16px; color:#d0d8e0; font-weight:700">${activeCount} / ${arr.length}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Modal Aktif</div><div style="font-size:16px; color:#fbbf24; font-weight:700">$${totModal.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Pool PnL (Aktif)</div><div style="font-size:16px; color:${colorPool}; font-weight:700">${sgn(totPoolPnl)}$${totPoolPnl.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Hedge PnL (Aktif)</div><div style="font-size:16px; color:${colorHedge}; font-weight:700">${sgn(totHedge)}$${totHedge.toFixed(2)}</div></div>
+        <div style="background:#0a1a14; padding:6px 10px; border-radius:5px; border:1px solid ${totNet >= 0 ? '#064e3b' : '#7f1d1d'}"><div style="font-size:10px; color:#9ca3af">NET (Aktif)</div><div style="font-size:18px; color:${colorNet}; font-weight:700">${sgn(totNet)}$${totNet.toFixed(2)}</div></div>
       </div>
+      ${closedHeader}
       <div style="overflow-x:auto">
         <table style="width:100%; border-collapse:collapse; font-family:'Inter', sans-serif">
           <thead style="background:#0d1219">
