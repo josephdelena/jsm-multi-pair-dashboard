@@ -642,8 +642,10 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
   //   - uniswap-style (Uniswap V3 / PancakeSwap V3 / Camelot V3): pos.fee = fee tier (100/500/3000/10000), compare ke poolMeta.fee
   //   - slipstream-style (Aerodrome/Velodrome): pos.fee actually = tickSpacing (1/10/50/100/200), compare ke poolMeta.tickSpacing
   async function tryMatch(npm, tokenId, source) {
-    if (seenTokenIds.has(tokenId)) return;
-    seenTokenIds.add(tokenId);
+    // Dedupe per-NPM (tokenId counter beda per NPM contract, jadi tokenId sama bisa exist di 2 NPM beda)
+    const key = npm.address.toLowerCase() + ':' + tokenId;
+    if (seenTokenIds.has(key)) return;
+    seenTokenIds.add(key);
     let pos;
     try { pos = await readPosition(npm.address, tokenId); }
     catch (e) { candidates.push({ tokenId, npm: npm.name, source, error: e.message }); return; }
