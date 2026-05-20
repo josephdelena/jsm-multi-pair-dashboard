@@ -538,9 +538,10 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
   const candidates = []; // log semua NFT yg di-enumerate (untuk diag kalau gak ketemu match)
   const diag = { npmCounts: {}, gaugeStakedCount: null, gaugeError: null, candidates };
 
-  const poolKey = poolMeta.tickSpacing != null ? poolMeta.tickSpacing : poolMeta.fee;
-
   // Helper: check 1 tokenId di NPM mana → kalau match pool, tambah ke results
+  // Match logic per kind:
+  //   - uniswap-style (Uniswap V3 / PancakeSwap V3 / Camelot V3): pos.fee = fee tier (100/500/3000/10000), compare ke poolMeta.fee
+  //   - slipstream-style (Aerodrome/Velodrome): pos.fee actually = tickSpacing (1/10/50/100/200), compare ke poolMeta.tickSpacing
   async function tryMatch(npm, tokenId, source) {
     if (seenTokenIds.has(tokenId)) return;
     seenTokenIds.add(tokenId);
@@ -549,11 +550,13 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
     catch (e) { candidates.push({ tokenId, npm: npm.name, source, error: e.message }); return; }
     const matchToken0 = pos.token0.toLowerCase() === poolMeta.token0;
     const matchToken1 = pos.token1.toLowerCase() === poolMeta.token1;
-    const matchFee = poolKey == null || pos.fee === poolKey;
+    const expectedKey = npm.kind === 'slipstream' ? poolMeta.tickSpacing : poolMeta.fee;
+    // Fallback: kalau expected key null (mis. pool gak punya field itu), terima any
+    const matchFee = expectedKey == null || pos.fee === expectedKey;
     const matched = matchToken0 && matchToken1 && matchFee;
     candidates.push({
       tokenId, npm: npm.name, source,
-      token0: pos.token0.toLowerCase(), token1: pos.token1.toLowerCase(), feeOrSpacing: pos.fee,
+      token0: pos.token0.toLowerCase(), token1: pos.token1.toLowerCase(), feeOrSpacing: pos.fee, expectedKey,
       matchToken0, matchToken1, matchFee, matched
     });
     if (!matched) return;
