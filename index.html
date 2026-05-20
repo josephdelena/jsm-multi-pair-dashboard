@@ -3075,7 +3075,7 @@ function plRenderHistory() {
         <td style="padding:10px 8px; font-size:12px; color:${cPool}; font-family:monospace; text-align:right">${sgn(poolPnl)}$${poolPnl.toFixed(2)}</td>
         <td style="padding:10px 8px; font-size:12px; color:${cHedge}; font-family:monospace; text-align:right; cursor:pointer; border-left:1px dashed #2a3548" onclick="plEditHedge(${e.addedAt})" title="Klik untuk edit hedge PnL">${sgn(hedge)}$${hedge.toFixed(2)} <span style="color:#6b7280; font-size:9px">✎</span></td>
         <td style="padding:10px 8px; font-size:13px; color:${cNet}; font-family:monospace; text-align:right; font-weight:700; background:#0a0e16">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:10px; font-weight:400">${netPct !== null ? sgn(net)+netPct.toFixed(2)+'%' : ''}</span></td>
-        <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' AERO' : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
+        <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' '+(e.rewardSymbol || 'AERO') : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${ageStr}</td>
         <td style="padding:10px 8px; text-align:center">
           <button onclick="plDeleteHistoryEntry(${e.addedAt})" style="background:transparent; color:#f87171; border:1px solid #7f1d1d; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:10px">🗑</button>
@@ -3104,7 +3104,7 @@ function plRenderHistory() {
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Pool PnL</th>
               <th style="padding:8px; font-size:10px; color:#a78bfa; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Hedge ✎</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right; background:#0a0e16">NET</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">AERO</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Emissions</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Umur</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:center">⋯</th>
             </tr>
@@ -3226,6 +3226,7 @@ async function plLookup() {
 
 function plRenderPositions(data) {
   const container = document.getElementById('pl_results');
+  // Fallback aja kalau API gak return rewardPriceUsd
   const aeroPriceUsd = (typeof prices !== 'undefined' && prices['AEROUSDT']) || 0;
 
   const cards = data.positions.map((p, idx) => {
@@ -3252,9 +3253,11 @@ function plRenderPositions(data) {
     if (s0 === 'USDC' || s0 === 'USDBC') feesUsd = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0);
     else if (s1 === 'USDC' || s1 === 'USDBC') feesUsd = p.token1.fees + p.token0.fees * p.currentPrice;
 
-    // AERO USD
-    const aeroAmt = (typeof p.aeroEarned === 'number') ? p.aeroEarned : 0;
-    const aeroUsd = aeroAmt * aeroPriceUsd;
+    // Reward (AERO di Base, VELO di OP) — pakai server-side price kalau ada
+    const rewardSymbol = p.rewardSymbol || 'AERO';
+    const aeroAmt = (typeof p.rewardAmount === 'number') ? p.rewardAmount : (typeof p.aeroEarned === 'number' ? p.aeroEarned : 0);
+    const rewardPx = (typeof p.rewardPriceUsd === 'number') ? p.rewardPriceUsd : aeroPriceUsd;
+    const aeroUsd = (typeof p.rewardUsd === 'number') ? p.rewardUsd : (aeroAmt * rewardPx);
 
     // PnL
     const pnlUsd = modal ? (curUsd + feesUsd + aeroUsd - modal) : null;
@@ -3278,7 +3281,7 @@ function plRenderPositions(data) {
             <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
             <div style="font-family:monospace; font-size:13px; color:#d0d8e0">${p.currentPrice ? p.currentPrice.toFixed(p.currentPrice < 1 ? 6 : 4) : '—'}</div>
           </div>
-          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
+          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, rewardSymbol, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
         </div>
       </div>
 
@@ -3306,7 +3309,7 @@ function plRenderPositions(data) {
           <tr><td style="padding:3px 0; color:#9ca3af">${p.token1.symbol} di LP</td><td style="text-align:right; color:#d0d8e0">${p.token1.amount.toFixed(p.token1.amount < 1 ? 6 : 4)}</td></tr>
           <tr style="border-top:1px solid #1f2638"><td style="padding:6px 0; color:#9ca3af">Value sekarang (USD)</td><td style="text-align:right; color:#d0d8e0; font-weight:600">$${curUsd.toFixed(2)}</td></tr>
           <tr><td style="padding:3px 0; color:#9ca3af">Fee LP (trading) USD</td><td style="text-align:right; color:#6ee7b7">$${feesUsd.toFixed(4)}</td></tr>
-          ${aeroAmt ? `<tr><td style="padding:3px 0; color:#9ca3af">AERO earned</td><td style="text-align:right; color:#6ee7b7">${aeroAmt.toFixed(4)} AERO ${aeroPriceUsd ? `($${aeroUsd.toFixed(2)})` : '<span style="color:#6b7280">(price n/a)</span>'}</td></tr>` : ''}
+          ${aeroAmt ? `<tr><td style="padding:3px 0; color:#9ca3af">${rewardSymbol} earned</td><td style="text-align:right; color:#6ee7b7">${aeroAmt.toFixed(4)} ${rewardSymbol} ${aeroUsd ? `($${aeroUsd.toFixed(2)})` : '<span style="color:#6b7280">(price n/a)</span>'}</td></tr>` : ''}
           <tr style="border-top:1px solid #1f2638"><td style="padding:6px 0; color:#9ca3af">Range Pa — Pb</td><td style="text-align:right; color:#d0d8e0">${p.rangeLower ? p.rangeLower.toFixed(p.rangeLower < 1 ? 6 : 4) : '—'} — ${p.rangeUpper ? p.rangeUpper.toFixed(p.rangeUpper < 1 ? 6 : 4) : '—'}</td></tr>
         </table>
       </div>

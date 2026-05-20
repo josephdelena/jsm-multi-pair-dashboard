@@ -24,7 +24,8 @@ const CHAINS = {
       { name: 'Aerodrome SlipStream', address: '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', kind: 'slipstream' },
       { name: 'Uniswap V3 (Base)',    address: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', kind: 'uniswap' }
     ],
-    voter: '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5' // Aerodrome Voter
+    voter: '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5', // Aerodrome Voter
+    reward: { symbol: 'AERO', coingeckoId: 'aerodrome-finance' }
   },
   optimism: {
     name: 'Optimism',
@@ -39,9 +40,36 @@ const CHAINS = {
       { name: 'Velodrome SlipStream', address: '0x416b433906b1B72FA758e166e239c43d68dC6F29', kind: 'slipstream' },
       { name: 'Uniswap V3 (OP)',      address: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', kind: 'uniswap' }
     ],
-    voter: '0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C' // Velodrome v2 Voter
+    voter: '0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C', // Velodrome v2 Voter
+    reward: { symbol: 'VELO', coingeckoId: 'velodrome-finance' }
   }
 };
+
+// Cache harga reward (in-memory, per-instance Vercel — TTL 60s)
+const _priceCache = {};
+async function fetchRewardPriceUsd(coingeckoId) {
+  if (!coingeckoId) return null;
+  const now = Date.now();
+  const cached = _priceCache[coingeckoId];
+  if (cached && (now - cached.at) < 60_000) return cached.price;
+  try {
+    const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoId}&vs_currencies=usd`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const price = d?.[coingeckoId]?.usd;
+    if (typeof price === 'number') {
+      _priceCache[coingeckoId] = { price, at: now };
+      return price;
+    }
+  } catch {}
+  return null;
+}
+
+function getRewardConfig() {
+  const ctx = chainCtx.getStore();
+  const key = (ctx && ctx.chainKey) || 'base';
+  return CHAINS[key].reward;
+}
 
 function getRpcs() {
   const ctx = chainCtx.getStore();
@@ -573,6 +601,7 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
   }
 
   let aeroEarned = null;
+  let rewardSymbol = null, rewardPriceUsd = null, rewardUsd = null;
   if (gaugeAddress) {
     try {
       let earnedData;
@@ -584,6 +613,13 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
       const earnedResult = await ethCall(gaugeAddress, earnedData);
       const earnedWei = hex2BN(earnedResult);
       aeroEarned = Number(earnedWei) / 1e18;
+      // Lookup reward symbol + price per chain
+      const rcfg = getRewardConfig();
+      if (rcfg) {
+        rewardSymbol = rcfg.symbol;
+        rewardPriceUsd = await fetchRewardPriceUsd(rcfg.coingeckoId);
+        if (typeof rewardPriceUsd === 'number') rewardUsd = aeroEarned * rewardPriceUsd;
+      }
     } catch (e) {
       aeroEarned = { error: e.message };
     }
@@ -605,6 +641,10 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
     token0: { ...token0Info, address: position.token0, amount: amount0_human, fees: fees0_human },
     token1: { ...token1Info, address: position.token1, amount: amount1_human, fees: fees1_human },
     aeroEarned,
+    rewardSymbol,
+    rewardAmount: (typeof aeroEarned === 'number') ? aeroEarned : null,
+    rewardPriceUsd,
+    rewardUsd,
     originalDeposit,
     raw: {
       amount0_wei: Math.floor(amount0).toString(),
