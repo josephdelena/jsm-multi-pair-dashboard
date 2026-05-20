@@ -870,7 +870,36 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
 
   let aeroEarned = null;
   let rewardSymbol = null, rewardPriceUsd = null, rewardUsd = null;
-  if (gaugeAddress) {
+
+  // Cek apakah NFT di-stake di MasterChef (PancakeSwap V3) — pakai pendingCake(tokenId) instead of earned()
+  let masterchefStaked = null;
+  try {
+    const ownerR = await ethCall(npmAddress, '0x6352211e' + pad(toHex(tokenId)));
+    const owner = ('0x' + ownerR.replace('0x','').slice(-40)).toLowerCase();
+    const mc = getMasterchefs().find(m => m.address.toLowerCase() === owner);
+    if (mc) masterchefStaked = mc;
+  } catch {}
+
+  if (masterchefStaked) {
+    // PancakeSwap MasterChef V3: pendingCake(uint256) = 0xce5f39c6
+    try {
+      const r = await ethCall(masterchefStaked.address, '0xce5f39c6' + pad(toHex(tokenId)));
+      const wei = hex2BN(r);
+      aeroEarned = Number(wei) / 1e18; // CAKE has 18 decimals
+      rewardSymbol = 'CAKE';
+      // CAKE token address di Base: 0x305591...13a1, di Arb: 0x1b896893...beb53
+      const cakeAddrByChain = {
+        base: '0x3055913c90Fcc1A6CE9a358911721eEb942013A1',
+        arbitrum: '0x1b896893dfc86bb67Cf57767298b9073D2c1bA2c'
+      };
+      const ctx = chainCtx.getStore();
+      const chainKey = (ctx && ctx.chainKey) || 'base';
+      const cakeAddr = cakeAddrByChain[chainKey];
+      const platform = CHAINS[chainKey].coingeckoPlatform;
+      if (cakeAddr) rewardPriceUsd = await fetchPriceByContract(platform, cakeAddr);
+      if (typeof rewardPriceUsd === 'number') rewardUsd = aeroEarned * rewardPriceUsd;
+    } catch (e) { aeroEarned = { error: e.message }; }
+  } else if (gaugeAddress) {
     try {
       let earnedData;
       if (walletAddress) {
