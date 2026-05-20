@@ -3189,14 +3189,14 @@ async function plLookup() {
       const d = data.diag || {};
       const diagLines = [];
       if (d.npmCounts) {
-        for (const [name, c] of Object.entries(d.npmCounts)) diagLines.push(`${name} balanceOf(wallet): ${c}`);
+        for (const [name, c] of Object.entries(d.npmCounts)) diagLines.push(`${name} balanceOf: ${c}`);
       }
-      if (d.gaugeStakedCount != null) diagLines.push(`Gauge stakedLength(wallet): ${d.gaugeStakedCount}`);
+      if (d.autoResolvedGauge) diagLines.push(`Gauge auto-resolved: ${d.autoResolvedGauge.slice(0,8)}...${d.autoResolvedGauge.slice(-4)}`);
+      else if (d.effectiveGauge) diagLines.push(`Gauge dipakai: ${d.effectiveGauge.slice(0,8)}...${d.effectiveGauge.slice(-4)}`);
+      else diagLines.push('Gauge: gak ada di Voter (pool ini gak punya gauge)');
+      if (d.gaugeStakedCount != null) diagLines.push(`Gauge stakedLength: ${d.gaugeStakedCount}`);
       if (d.gaugeError) diagLines.push(`Gauge error: ${d.gaugeError}`);
-      const tip = data.poolMeta?.token0 && !d.gaugeStakedCount && !Object.values(d.npmCounts || {}).some(v => v > 0)
-        ? '<br>💡 Kalau NFT-nya di-stake ke gauge, isi field <b>Gauge Address</b> lalu cari lagi.'
-        : '';
-      plSetStatus(`ℹ️ Gak ada NFT LP milik wallet ini di pool tersebut.<br><span style="color:#6b7280; font-size:10px">Pool tokens: ${data.poolMeta?.token0 || '—'} / ${data.poolMeta?.token1 || '—'}<br>${diagLines.join(' · ')}</span>${tip}`, 'warn');
+      plSetStatus(`ℹ️ Gak ada NFT LP milik wallet ini di pool tersebut.<br><span style="color:#6b7280; font-size:10px">Pool tokens: ${data.poolMeta?.token0 || '—'} / ${data.poolMeta?.token1 || '—'}<br>${diagLines.join(' · ')}</span>`, 'warn');
       return;
     }
     plSetStatus(`✓ Ketemu ${data.positions.length} posisi di pool ini.`, 'ok');

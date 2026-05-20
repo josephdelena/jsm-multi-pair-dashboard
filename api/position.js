@@ -23,7 +23,8 @@ const CHAINS = {
     npms: [
       { name: 'Aerodrome SlipStream', address: '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', kind: 'slipstream' },
       { name: 'Uniswap V3 (Base)',    address: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', kind: 'uniswap' }
-    ]
+    ],
+    voter: '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5' // Aerodrome Voter
   },
   optimism: {
     name: 'Optimism',
@@ -37,7 +38,8 @@ const CHAINS = {
     npms: [
       { name: 'Velodrome SlipStream', address: '0x416b433906b1B72FA758e166e239c43d68dC6F29', kind: 'slipstream' },
       { name: 'Uniswap V3 (OP)',      address: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', kind: 'uniswap' }
-    ]
+    ],
+    voter: '0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C' // Velodrome v2 Voter
   }
 };
 
@@ -51,6 +53,28 @@ function getNpms() {
   const ctx = chainCtx.getStore();
   const key = (ctx && ctx.chainKey) || 'base';
   return CHAINS[key].npms;
+}
+
+function getVoter() {
+  const ctx = chainCtx.getStore();
+  const key = (ctx && ctx.chainKey) || 'base';
+  return CHAINS[key].voter;
+}
+
+// ── Voter.gauges(pool) → gauge address (0x0 kalau pool gak punya gauge) ──
+async function resolveGaugeForPool(poolAddress) {
+  const voter = getVoter();
+  if (!voter) return null;
+  try {
+    // gauges(address) = 0xb9a09fd5
+    const data = '0xb9a09fd5' + pad(poolAddress.replace('0x','').toLowerCase());
+    const r = await ethCall(voter, data);
+    const addr = '0x' + r.replace('0x','').slice(-40);
+    if (/^0x0+$/.test(addr.replace('0x',''))) return null;
+    return addr;
+  } catch {
+    return null;
+  }
 }
 
 // Token decimals (sama di Base + Optimism untuk token-token di bawah ini)
@@ -583,14 +607,23 @@ module.exports = async function handler(req, res) {
       }
       try {
         const poolMeta = await readPoolMeta(poolAddress);
-        const { results: matches, diag } = await findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAddress);
+        // Auto-resolve gauge dari Voter kalau user gak kasih (atau kasih address yg jelas dari chain lain — kita pakai voter yg lebih akurat)
+        let effectiveGauge = gaugeAddress && /^0x[a-fA-F0-9]{40}$/.test(gaugeAddress) ? gaugeAddress : null;
+        let autoResolvedGauge = null;
+        if (!effectiveGauge) {
+          autoResolvedGauge = await resolveGaugeForPool(poolAddress);
+          if (autoResolvedGauge) effectiveGauge = autoResolvedGauge;
+        }
+        const { results: matches, diag } = await findPositionsByPool(walletAddress, poolAddress, poolMeta, effectiveGauge);
+        diag.autoResolvedGauge = autoResolvedGauge;
+        diag.effectiveGauge = effectiveGauge;
         if (!matches.length) {
           return res.status(200).json({ ok: true, mode: 'findByPool', chain: chainKey, poolAddress, walletAddress, poolMeta, positions: [], diag, message: `Tidak ada NFT LP milik wallet ini di pool tersebut di chain ${CHAINS[chainKey].name} (wallet maupun staked di gauge).` });
         }
         const positions = [];
         for (const m of matches) {
           try {
-            const inner = await readFullPosition(m.npmAddress, m.tokenId, poolAddress, gaugeAddress, walletAddress, m.position);
+            const inner = await readFullPosition(m.npmAddress, m.tokenId, poolAddress, effectiveGauge, walletAddress, m.position);
             positions.push({ ...inner, chain: chainKey, npmName: m.npmName, npmKind: m.npmKind, source: m.source });
           } catch (e) {
             positions.push({ ok: false, chain: chainKey, tokenId: m.tokenId, npmAddress: m.npmAddress, error: e.message, source: m.source });
