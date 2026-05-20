@@ -3001,7 +3001,17 @@ async function plLookup() {
       return;
     }
     if (!data.positions || !data.positions.length) {
-      plSetStatus(`ℹ️ Gak ada NFT LP milik wallet ini di pool tersebut.<br><span style="color:#6b7280; font-size:10px">Pool tokens: ${data.poolMeta?.token0 || '—'} / ${data.poolMeta?.token1 || '—'}</span>`, 'warn');
+      const d = data.diag || {};
+      const diagLines = [];
+      if (d.npmCounts) {
+        for (const [name, c] of Object.entries(d.npmCounts)) diagLines.push(`${name} balanceOf(wallet): ${c}`);
+      }
+      if (d.gaugeStakedCount != null) diagLines.push(`Gauge stakedLength(wallet): ${d.gaugeStakedCount}`);
+      if (d.gaugeError) diagLines.push(`Gauge error: ${d.gaugeError}`);
+      const tip = data.poolMeta?.token0 && !d.gaugeStakedCount && !Object.values(d.npmCounts || {}).some(v => v > 0)
+        ? '<br>💡 Kalau NFT-nya di-stake ke gauge, isi field <b>Gauge Address</b> lalu cari lagi.'
+        : '';
+      plSetStatus(`ℹ️ Gak ada NFT LP milik wallet ini di pool tersebut.<br><span style="color:#6b7280; font-size:10px">Pool tokens: ${data.poolMeta?.token0 || '—'} / ${data.poolMeta?.token1 || '—'}<br>${diagLines.join(' · ')}</span>${tip}`, 'warn');
       return;
     }
     plSetStatus(`✓ Ketemu ${data.positions.length} posisi di pool ini.`, 'ok');
@@ -3058,7 +3068,7 @@ function plRenderPositions(data) {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
         <div>
           <div style="font-size:13px; font-weight:700; color:#d0d8e0">NFT #${p.tokenId} — ${p.token0.symbol}/${p.token1.symbol}</div>
-          <div style="font-size:10px; color:#6b7280; margin-top:2px">${p.npmName || ''} · ${rangeBadge}</div>
+          <div style="font-size:10px; color:#6b7280; margin-top:2px">${p.npmName || ''} · ${rangeBadge} · ${p.source === 'staked' ? '<span style="color:#a78bfa">🏦 Staked di gauge</span>' : '<span style="color:#94a3b8">👛 Di wallet</span>'}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
