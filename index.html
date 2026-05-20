@@ -3195,6 +3195,7 @@ async function plLookup() {
       else if (d.effectiveGauge) diagLines.push(`Gauge (user input): ${d.effectiveGauge}`);
       else diagLines.push('Gauge: gak ada di Voter (pool ini gak punya gauge resmi)');
       if (d.gaugeStakedCount != null) diagLines.push(`Gauge stakedLength: ${d.gaugeStakedCount}`);
+      if (d.gaugeNpmResolved) diagLines.push(`NPM resolved from gauge: <span style="color:#6ee7b7">${d.gaugeNpmResolved}</span>`);
       if (d.gaugeError) diagLines.push(`Gauge error: ${d.gaugeError}`);
 
       // Tampilkan candidates (NFT yg di-enumerate tapi gak match)

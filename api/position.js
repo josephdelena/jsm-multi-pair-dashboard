@@ -77,6 +77,23 @@ async function resolveGaugeForPool(poolAddress) {
   }
 }
 
+// ── Gauge.nft() / .nfpm() / .nonfungiblePositionManager() → canonical NPM address ──
+// Try semua varian umum, return alamat pertama yg valid.
+async function resolveNpmFromGauge(gaugeAddress) {
+  if (!gaugeAddress) return null;
+  const selectors = ['0x47ccca02', '0x7303e913', '0xb44a2722', '0x791b98bc']; // nft, nfpm, nonfungiblePositionManager, positionManager
+  for (const sel of selectors) {
+    try {
+      const r = await ethCall(gaugeAddress, sel);
+      if (!r || r === '0x') continue;
+      const addr = '0x' + r.replace('0x','').slice(-40);
+      if (/^0x0+$/.test(addr.replace('0x',''))) continue;
+      return addr;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
 // Token decimals (sama di Base + Optimism untuk token-token di bawah ini)
 const TOKEN_DECIMALS = {
   WETH:  18,
@@ -469,19 +486,25 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
   }
 
   // (B) Enumerate via gauge stakedByIndex (kalau gauge address dikasih).
-  //     Asumsi: Aerodrome SlipStream gauge. NFT yg di-stake ownership-nya pindah ke gauge contract,
-  //     tapi positions(tokenId) di Aerodrome NPM tetap bisa di-baca.
+  //     NFT yg di-stake ownership-nya pindah ke gauge contract. Untuk baca positions(tokenId),
+  //     pakai NPM canonical yg disebut gauge sendiri (gauge.nft() / .nfpm() / ...).
+  //     Fallback ke hardcoded slipstream NPM kalau gauge.nft() gak tersedia.
   if (gaugeAddress) {
     try {
       const stakedCount = await readGaugeStakedLength(gaugeAddress, walletAddress);
       diag.gaugeStakedCount = stakedCount;
-      const aeroNpm = getNpms().find(n => n.kind === 'slipstream');
+      const gaugeNpmAddr = await resolveNpmFromGauge(gaugeAddress);
+      diag.gaugeNpmResolved = gaugeNpmAddr;
+      const fallbackSlipNpm = getNpms().find(n => n.kind === 'slipstream');
+      const effectiveNpm = gaugeNpmAddr
+        ? { name: 'Gauge NPM', address: gaugeNpmAddr, kind: 'slipstream' }
+        : fallbackSlipNpm;
       const limit = Math.min(stakedCount, 50);
       for (let i = 0; i < limit; i++) {
         let tokenId;
         try { tokenId = await readGaugeStakedByIndex(gaugeAddress, walletAddress, i); }
         catch { continue; }
-        await tryMatch(aeroNpm, tokenId, 'staked');
+        await tryMatch(effectiveNpm, tokenId, 'staked');
       }
     } catch (e) {
       diag.gaugeError = e.message;
