@@ -30,6 +30,20 @@ const CHAINS = {
     coingeckoPlatform: 'base',
     masterchefs: [
       { name: 'PancakeSwap MasterChef V3', address: '0xC6A2Db661D5a5690172d8eB0a7DEA2d3008665A3', npmKind: 'uniswap', npmHint: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364' }
+    ],
+    basescan: 'https://api.basescan.org/api',
+    knownDexContracts: [
+      // NPMs (already in npms list above tapi included untuk completeness scan)
+      '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', // Aerodrome SlipStream NPM
+      '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', // Uniswap V3 NPM
+      '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364', // PancakeSwap V3 NPM
+      // MasterChef
+      '0xC6A2Db661D5a5690172d8eB0a7DEA2d3008665A3', // PancakeSwap MasterChef V3
+      // Voter
+      '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5', // Aerodrome Voter
+      // vfat known addresses (Base)
+      '0xD62b33A7Df4D0ca5EdD373576E48F73366E36179', // vfat zap/router (dari tx user)
+      '0x014cBA9268067dea6635a761e306561bB5d24f99'  // vfat strategy/proxy (dari tx user)
     ]
   },
   optimism: {
@@ -47,7 +61,13 @@ const CHAINS = {
     ],
     voter: '0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C', // Velodrome v2 Voter
     reward: { symbol: 'VELO', coingeckoId: 'velodrome-finance' },
-    coingeckoPlatform: 'optimistic-ethereum'
+    coingeckoPlatform: 'optimistic-ethereum',
+    basescan: 'https://api-optimistic.etherscan.io/api',
+    knownDexContracts: [
+      '0x416b433906b1B72FA758e166e239c43d68dC6F29', // Velodrome SlipStream NPM
+      '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', // Uniswap V3 NPM
+      '0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C'  // Velodrome v2 Voter
+    ]
   },
   arbitrum: {
     name: 'Arbitrum',
@@ -68,6 +88,13 @@ const CHAINS = {
     coingeckoPlatform: 'arbitrum-one',
     masterchefs: [
       { name: 'PancakeSwap MasterChef V3', address: '0x5e09ACf80C0296740eC5d6F643005a4ef8DaA694', npmKind: 'uniswap', npmHint: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364' }
+    ],
+    basescan: 'https://api.arbiscan.io/api',
+    knownDexContracts: [
+      '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', // Uniswap V3 NPM
+      '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364', // PancakeSwap V3 NPM
+      '0x00c7f3082833e796A5b3e4Bd59f6642FF44DCD15', // Camelot V3 NPM
+      '0x5e09ACf80C0296740eC5d6F643005a4ef8DaA694'  // PancakeSwap MasterChef V3
     ]
   }
 };
@@ -917,10 +944,49 @@ module.exports = async function handler(req, res) {
     let s=''; req.on('data', c => s += c); req.on('end', () => { try { r(JSON.parse(s)); } catch { r({}); } });
   });
 
-  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress, chain, manualTokenIds } = body;
+  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress, chain, manualTokenIds, basescanKey, lookbackDays, txHash } = body;
   const chainKey = (chain && CHAINS[chain]) ? chain : 'base';
 
   return chainCtx.run({ chainKey }, async () => {
+    // ── Mode C: findClosed (scan recent txs via Basescan, list candidate closed positions) ──
+    if (mode === 'findClosed') {
+      if (!walletAddress || !basescanKey) {
+        return res.status(400).json({ error: 'findClosed requires: walletAddress, basescanKey' });
+      }
+      const cfg = CHAINS[chainKey];
+      if (!cfg.basescan) return res.status(400).json({ error: `Chain ${chainKey} belum support Basescan API` });
+      const days = Math.max(1, Math.min(90, parseInt(lookbackDays) || 7));
+      try {
+        const chainIdMap = { base: 8453, optimism: 10, arbitrum: 42161 };
+        const url = `${cfg.basescan}?chainid=${chainIdMap[chainKey]}&module=account&action=txlist&address=${walletAddress}&page=1&offset=100&sort=desc&apikey=${basescanKey}`;
+        const r = await fetch(url);
+        const data = await r.json();
+        if (data.status !== '1' && data.status !== '0') {
+          return res.status(500).json({ error: 'Basescan API error', detail: data.message || data.result });
+        }
+        const txs = Array.isArray(data.result) ? data.result : [];
+        const cutoffTs = Math.floor(Date.now() / 1000) - (days * 86400);
+        const known = (cfg.knownDexContracts || []).map(a => a.toLowerCase());
+        const candidates = txs
+          .filter(t => parseInt(t.timeStamp) >= cutoffTs)
+          .filter(t => known.includes((t.to || '').toLowerCase()))
+          .map(t => ({
+            hash: t.hash,
+            timeStamp: parseInt(t.timeStamp),
+            blockNumber: parseInt(t.blockNumber),
+            to: t.to,
+            methodId: t.methodId || (t.input || '').slice(0, 10),
+            functionName: t.functionName || '',
+            value: t.value,
+            isError: t.isError === '1'
+          }))
+          .slice(0, 25);
+        return res.status(200).json({ ok: true, mode: 'findClosed', chain: chainKey, walletAddress, lookbackDays: days, candidates });
+      } catch (e) {
+        return res.status(500).json({ error: 'findClosed failed', detail: e.message });
+      }
+    }
+
     // ── Mode B: findByPool (input pool address + wallet, output all matching positions) ──
     if (mode === 'findByPool') {
       if (!poolAddress || !walletAddress) {

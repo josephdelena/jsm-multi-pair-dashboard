@@ -1151,6 +1151,30 @@
       </div>
     </div>
 
+    <!-- AUTO-SCAN CLOSED POSITIONS (collapsible) -->
+    <details style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:14px; margin-bottom:14px">
+      <summary style="cursor:pointer; font-size:12px; color:#a78bfa; font-weight:600">🔎 Auto-scan closed positions (butuh Basescan API key)</summary>
+      <div style="margin-top:12px">
+        <div style="display:grid; grid-template-columns: 3fr 1fr 1fr; gap:12px; align-items:end">
+          <div class="field">
+            <label>Basescan API Key (cached lokal)</label>
+            <input type="password" id="pl_apikey" placeholder="API key dari etherscan.io (works untuk Base/Op/Arb)" style="font-family:monospace; font-size:11px">
+          </div>
+          <div class="field">
+            <label>Lookback (hari)</label>
+            <input type="number" id="pl_lookback" value="7" min="1" max="90" step="1">
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button class="btn" onclick="plScanClosed()" style="width:100%; background:#a78bfa; color:#1a0f3a; font-weight:700">🔎 Scan</button>
+          </div>
+        </div>
+        <div style="margin-top:8px; font-size:10px; color:#6b7280">Scan recent txs wallet, filter ke contract DEX/farm yg dikenal (NPM, MasterChef, Voter, vfat router). Hasilnya list tx kandidat — kamu pilih yg cocok closed positionnya.</div>
+        <div id="pl_scanstatus" style="display:none; margin-top:10px; font-size:11px"></div>
+        <div id="pl_scanresults" style="margin-top:10px"></div>
+      </div>
+    </details>
+
     <!-- STATUS / RESULTS -->
     <div id="pl_status" style="display:none; background:#131826; border:1px solid #1f2638; border-radius:8px; padding:14px; margin-bottom:14px; font-size:12px"></div>
     <div id="pl_results"></div>
@@ -2963,6 +2987,9 @@ function plInit() {
   if (pf && !pf.value) pf.value = lastPool;
   if (gf && !gf.value) gf.value = lastGauge;
   if (cf && !cf.value) cf.value = lastChain;
+  const apiKey = localStorage.getItem('jsm-basescan-key') || '';
+  const akf = document.getElementById('pl_apikey');
+  if (akf && !akf.value && apiKey) akf.value = apiKey;
   plRenderHistory();
 
   // Auto-refresh kalau ada entries dan minimum 1 belum di-refresh dalam 5 menit
@@ -3257,6 +3284,95 @@ function plFormatAge(unixSec) {
   if (h > 0) return `${h} jam ${m} menit`;
   if (m > 0) return `${m} menit`;
   return `${diff} detik`;
+}
+
+async function plScanClosed() {
+  const apikey = (document.getElementById('pl_apikey').value || '').trim();
+  const lookback = parseInt(document.getElementById('pl_lookback').value) || 7;
+  const wallet = (document.getElementById('pl_wallet').value || localStorage.getItem('jsm-wallet') || '').trim();
+  const chain = document.getElementById('pl_chain').value || 'base';
+
+  if (!apikey) { plScanSetStatus('Basescan API key wajib. Gratis di etherscan.io → My Account → API Keys', 'err'); return; }
+  if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) { plScanSetStatus('Wallet address gak valid.', 'err'); return; }
+  localStorage.setItem('jsm-basescan-key', apikey);
+
+  plScanSetStatus(`⏳ Scan ${lookback} hari txs terakhir di ${chain}...`, 'warn');
+  document.getElementById('pl_scanresults').innerHTML = '';
+
+  try {
+    const r = await fetch('/api/position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'findClosed', chain, walletAddress: wallet, basescanKey: apikey, lookbackDays: lookback })
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) { plScanSetStatus(`❌ ${data.error || 'error'}${data.detail ? ' — ' + data.detail : ''}`, 'err'); return; }
+    if (!data.candidates || !data.candidates.length) {
+      plScanSetStatus(`ℹ️ Gak ada tx ke contract DEX/farm dikenal dalam ${lookback} hari terakhir.`, 'warn');
+      return;
+    }
+    plScanSetStatus(`✓ Ketemu ${data.candidates.length} tx kandidat`, 'ok');
+    plScanRenderCandidates(data);
+  } catch (e) {
+    plScanSetStatus(`❌ Network error: ${e.message}`, 'err');
+  }
+}
+
+function plScanSetStatus(msg, tone) {
+  const el = document.getElementById('pl_scanstatus');
+  if (!msg) { el.style.display = 'none'; return; }
+  const color = tone === 'err' ? '#f87171' : tone === 'ok' ? '#6ee7b7' : tone === 'warn' ? '#fbbf24' : '#9ca3af';
+  el.style.display = 'block';
+  el.style.color = color;
+  el.innerHTML = msg;
+}
+
+function plScanRenderCandidates(data) {
+  const fmtTs = ts => {
+    const d = new Date(ts * 1000);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const fmtAge = ts => {
+    const diff = Math.floor(Date.now()/1000 - ts);
+    const h = Math.floor(diff / 3600), m = Math.floor((diff % 3600) / 60);
+    if (h >= 24) return `${Math.floor(h/24)} hari`;
+    if (h >= 1) return `${h}j ${m}m`;
+    return `${m} menit`;
+  };
+  const scanBase = data.chain === 'optimism' ? 'optimistic.etherscan.io' : data.chain === 'arbitrum' ? 'arbiscan.io' : 'basescan.org';
+  const rows = data.candidates.map(c => {
+    const shortHash = c.hash.slice(0, 10) + '...' + c.hash.slice(-6);
+    const shortTo = c.to.slice(0, 8) + '...' + c.to.slice(-4);
+    const fn = (c.functionName || c.methodId || '—').split('(')[0].slice(0, 30);
+    return `
+      <tr style="border-bottom:1px solid #1f2638; ${c.isError ? 'opacity:0.5' : ''}">
+        <td style="padding:8px; font-size:11px; color:#9ca3af; white-space:nowrap">${fmtTs(c.timeStamp)}<br><span style="font-size:9px; color:#6b7280">${fmtAge(c.timeStamp)} lalu</span></td>
+        <td style="padding:8px; font-size:11px; color:#d0d8e0; font-family:monospace">${shortHash}</td>
+        <td style="padding:8px; font-size:11px; color:#a78bfa; font-family:monospace">${fn}${c.isError ? ' <span style="color:#f87171">FAIL</span>' : ''}</td>
+        <td style="padding:8px; font-size:11px; color:#9ca3af; font-family:monospace">${shortTo}</td>
+        <td style="padding:8px; text-align:right">
+          <a href="https://${scanBase}/tx/${c.hash}" target="_blank" style="color:#38bdf8; text-decoration:none; font-size:11px; margin-right:8px">↗ Open</a>
+          <button onclick="navigator.clipboard.writeText('${c.hash}').then(()=>alert('Tx hash di-copy'))" style="background:transparent; color:#94a3b8; border:1px solid #2a3548; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:10px">📋 Copy hash</button>
+        </td>
+      </tr>`;
+  }).join('');
+  document.getElementById('pl_scanresults').innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%; border-collapse:collapse; font-family:'Inter', sans-serif">
+        <thead style="background:#0d1219">
+          <tr>
+            <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">Waktu</th>
+            <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">Tx Hash</th>
+            <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">Function</th>
+            <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">To</th>
+            <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:right">Aksi</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px; font-size:10px; color:#6b7280">💡 Buka tx di Basescan untuk lihat detail (transfer, NFT, dll). Yang "withdraw"/"decrease"/"redeem" biasanya close tx. Kalau ketemu yang cocok, copy hash + kasih ke saya.</div>`;
 }
 
 function plSetStatus(html, tone) {
