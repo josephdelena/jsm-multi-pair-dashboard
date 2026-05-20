@@ -543,6 +543,28 @@
       </div>
     </div>
 
+    <!-- EMERGENCY HEDGE (SLEEP-PROOF) -->
+    <div style="background:#131826; border:2px solid #fbbf24; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:12px; color:#fbbf24; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px">🛌 Emergency Hedge — Sleep-Proof Backup</div>
+      <div style="font-size:11px; color:#9ca3af; margin-bottom:12px">Pre-armed dari awal cycle. Auto-fire kalau harga drop ke batas bawah. HOLD open (gak ada TP/SL) — kalau kamu offline dan harga crash, ini yang nyelametin.</div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px">
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">🎯 Trigger</td><td id="vc_em_trig" style="text-align:right; padding:6px 0; color:#fbbf24; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">TP</td><td style="text-align:right; padding:6px 0; color:#6b7280">— (NONE, hold open)</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">SL</td><td style="text-align:right; padding:6px 0; color:#6b7280">— (NONE, hold open)</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Tipe</td><td style="text-align:right; padding:6px 0">Stop-market PERMANENT</td></tr>
+        </table>
+        <table style="width:100%; font-family:monospace; font-size:12px">
+          <tr><td style="color:#9ca3af; padding:6px 0">Notional Short</td><td id="vc_em_n" style="text-align:right; padding:6px 0; font-weight:600">—</td></tr>
+          <tr><td style="color:#9ca3af; padding:6px 0">Collateral 10×</td><td id="vc_em_c" style="text-align:right; padding:6px 0">—</td></tr>
+          <tr><td style="color:#6ee7b7; padding:6px 0; font-size:11px">Lock NET past Pa</td><td style="text-align:right; padding:6px 0; color:#6ee7b7">$0 untuk drop apapun ✓</td></tr>
+        </table>
+      </div>
+      <div style="margin-top:12px; padding:10px; background:#1a1408; border-left:3px solid #fbbf24; border-radius:4px; font-size:11px; color:#fbbf24">
+        <b>⚠ Untuk sleep-proof TRUE NET=$0:</b> H1 harus HOLD open (jangan set TP). Set H1 SL longgar (+0.5%-1%) atau gak ada SL.
+      </div>
+    </div>
+
     <!-- HEDGE 2 — PATH B: H1 SL (whipsaw) -->
     <div style="background:#131826; border:1px solid #f87171; border-radius:8px; padding:18px; margin-bottom:14px">
       <div style="font-size:11px; color:#f87171; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px">Hedge 2 — Path B: H1 SL whipsaw (H1 rugi dulu)</div>
@@ -1215,8 +1237,16 @@ function vircalc() {
   const h2B_paProfit = N2B * (Pt2_B - Pa) / Pt2_B;
   const h2B_slPnl = -N2B * slPct / 100;
 
-  // Max collat (worst path)
-  const maxCollat = Math.max(collat1, collat2A, collat2B);
+  // ── EMERGENCY HEDGE (sleep-proof) ──
+  // Sized = x_at_Pa × Pa → locks past-Pa drop (LP becomes all VIRTUAL at Pa,
+  // value drops at x_at_Pa per $1; short profit = N/Pa per $1; match for lock)
+  const x_at_Pa = L * (1/sqrtPa - 1/sqrtPb);
+  const N_emergency = x_at_Pa * Pa;
+  const collat_emergency = N_emergency / lev;
+  const emergencyTrigger = floor;  // Pa × 1.005
+
+  // Max collat (worst path) — include emergency
+  const maxCollat = Math.max(collat1, collat2A, collat2B) + collat_emergency;
   const buffer = (modal + maxCollat) * bufPct / 100;
   const totalCapital = modal + maxCollat + buffer;
 
@@ -1259,6 +1289,11 @@ function vircalc() {
   document.getElementById('vc_h2a_c').textContent = `$${vcFmt(collat2A, 2)}`;
   document.getElementById('vc_h2a_paprofit').textContent = `+$${vcFmt(h2A_paProfit, 2)}`;
   document.getElementById('vc_h2a_slpnl').textContent = `-$${vcFmt(Math.abs(h2A_slPnl), 2)}`;
+
+  // Emergency hedge
+  document.getElementById('vc_em_trig').textContent = `$${vcFmt(emergencyTrigger, dec)}  (Pa × 1.005)`;
+  document.getElementById('vc_em_n').textContent = `$${vcFmt(N_emergency, 2)}`;
+  document.getElementById('vc_em_c').textContent = `$${vcFmt(collat_emergency, 2)}`;
 
   // H2 Path B
   document.getElementById('vc_h2b_trig').textContent = `$${vcFmt(Pt2_B, dec)}`;
