@@ -25,7 +25,8 @@ const CHAINS = {
       { name: 'Uniswap V3 (Base)',    address: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', kind: 'uniswap' }
     ],
     voter: '0x16613524e02ad97eDfeF371bC883F2F5d6C480A5', // Aerodrome Voter
-    reward: { symbol: 'AERO', coingeckoId: 'aerodrome-finance' }
+    reward: { symbol: 'AERO', coingeckoId: 'aerodrome-finance' },
+    coingeckoPlatform: 'base'
   },
   optimism: {
     name: 'Optimism',
@@ -41,7 +42,8 @@ const CHAINS = {
       { name: 'Uniswap V3 (OP)',      address: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', kind: 'uniswap' }
     ],
     voter: '0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C', // Velodrome v2 Voter
-    reward: { symbol: 'VELO', coingeckoId: 'velodrome-finance' }
+    reward: { symbol: 'VELO', coingeckoId: 'velodrome-finance' },
+    coingeckoPlatform: 'optimistic-ethereum'
   }
 };
 
@@ -69,6 +71,48 @@ function getRewardConfig() {
   const ctx = chainCtx.getStore();
   const key = (ctx && ctx.chainKey) || 'base';
   return CHAINS[key].reward;
+}
+
+function getCoingeckoPlatform() {
+  const ctx = chainCtx.getStore();
+  const key = (ctx && ctx.chainKey) || 'base';
+  return CHAINS[key].coingeckoPlatform;
+}
+
+// ── Gauge.rewardToken() → token address (paling akurat) ──
+async function resolveRewardToken(gaugeAddress) {
+  if (!gaugeAddress) return null;
+  for (const sel of ['0xf7c618c1', '0xd1af0c7d']) { // rewardToken, rewardsToken
+    try {
+      const r = await ethCall(gaugeAddress, sel);
+      if (!r || r === '0x') continue;
+      const addr = '0x' + r.replace('0x','').slice(-40);
+      if (/^0x0+$/.test(addr.replace('0x',''))) continue;
+      return addr.toLowerCase();
+    } catch {}
+  }
+  return null;
+}
+
+// ── CoinGecko token price by contract address (lebih akurat dari hardcoded id) ──
+async function fetchPriceByContract(platform, contractAddr) {
+  if (!platform || !contractAddr) return null;
+  const cacheKey = `${platform}:${contractAddr.toLowerCase()}`;
+  const now = Date.now();
+  const cached = _priceCache[cacheKey];
+  if (cached && (now - cached.at) < 60_000) return cached.price;
+  try {
+    const url = `https://api.coingecko.com/api/v3/simple/token_price/${platform}?contract_addresses=${contractAddr}&vs_currencies=usd`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const price = d?.[contractAddr.toLowerCase()]?.usd;
+    if (typeof price === 'number') {
+      _priceCache[cacheKey] = { price, at: now };
+      return price;
+    }
+  } catch {}
+  return null;
 }
 
 function getRpcs() {
@@ -613,13 +657,29 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
       const earnedResult = await ethCall(gaugeAddress, earnedData);
       const earnedWei = hex2BN(earnedResult);
       aeroEarned = Number(earnedWei) / 1e18;
-      // Lookup reward symbol + price per chain
+      // Lookup reward token via gauge.rewardToken() (paling akurat).
+      // Read symbol dari token contract, lalu fetch price dari CoinGecko BY CONTRACT.
+      // Fallback ke hardcoded coingeckoId kalau by-contract gagal.
       const rcfg = getRewardConfig();
-      if (rcfg) {
-        rewardSymbol = rcfg.symbol;
-        rewardPriceUsd = await fetchRewardPriceUsd(rcfg.coingeckoId);
-        if (typeof rewardPriceUsd === 'number') rewardUsd = aeroEarned * rewardPriceUsd;
+      const platform = getCoingeckoPlatform();
+      const rewardTokenAddr = await resolveRewardToken(gaugeAddress);
+      if (rewardTokenAddr) {
+        try {
+          const info = await readErc20Info(rewardTokenAddr);
+          rewardSymbol = info.symbol || rcfg?.symbol || null;
+          // Adjust amount kalau decimals bukan 18
+          if (info.decimals && info.decimals !== 18) {
+            aeroEarned = Number(earnedWei) / Math.pow(10, info.decimals);
+          }
+        } catch { rewardSymbol = rcfg?.symbol || null; }
+        rewardPriceUsd = await fetchPriceByContract(platform, rewardTokenAddr);
       }
+      if (typeof rewardPriceUsd !== 'number' && rcfg) {
+        // Fallback to hardcoded coingecko id
+        rewardPriceUsd = await fetchRewardPriceUsd(rcfg.coingeckoId);
+        if (!rewardSymbol) rewardSymbol = rcfg.symbol;
+      }
+      if (typeof rewardPriceUsd === 'number') rewardUsd = aeroEarned * rewardPriceUsd;
     } catch (e) {
       aeroEarned = { error: e.message };
     }
