@@ -6,27 +6,66 @@
 //
 // Returns JSON with liquidity, range, current price, token amounts, uncollected fees in USD
 
-const RPC_URLS = [
-  'https://base.llamarpc.com',
-  'https://base-rpc.publicnode.com',
-  'https://1rpc.io/base',
-  'https://base.drpc.org',
-  'https://mainnet.base.org'
-];
+// ── Multi-chain config ──
+const { AsyncLocalStorage } = require('async_hooks');
+const chainCtx = new AsyncLocalStorage();
 
-// Token decimals on Base
+const CHAINS = {
+  base: {
+    name: 'Base',
+    rpcs: [
+      'https://base.llamarpc.com',
+      'https://base-rpc.publicnode.com',
+      'https://1rpc.io/base',
+      'https://base.drpc.org',
+      'https://mainnet.base.org'
+    ],
+    npms: [
+      { name: 'Aerodrome SlipStream', address: '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', kind: 'slipstream' },
+      { name: 'Uniswap V3 (Base)',    address: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', kind: 'uniswap' }
+    ]
+  },
+  optimism: {
+    name: 'Optimism',
+    rpcs: [
+      'https://optimism.llamarpc.com',
+      'https://optimism-rpc.publicnode.com',
+      'https://1rpc.io/op',
+      'https://optimism.drpc.org',
+      'https://mainnet.optimism.io'
+    ],
+    npms: [
+      { name: 'Velodrome SlipStream', address: '0x416b433906b1B72FA758e166e239c43d68dC6F29', kind: 'slipstream' },
+      { name: 'Uniswap V3 (OP)',      address: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88', kind: 'uniswap' }
+    ]
+  }
+};
+
+function getRpcs() {
+  const ctx = chainCtx.getStore();
+  const key = (ctx && ctx.chainKey) || 'base';
+  return CHAINS[key].rpcs;
+}
+
+function getNpms() {
+  const ctx = chainCtx.getStore();
+  const key = (ctx && ctx.chainKey) || 'base';
+  return CHAINS[key].npms;
+}
+
+// Token decimals (sama di Base + Optimism untuk token-token di bawah ini)
 const TOKEN_DECIMALS = {
   WETH:  18,
   USDC:  6,
   cbBTC: 8,
-  SOL:   9,    // wormhole-wrapped SOL on Base
+  SOL:   9,
   VIRTUAL: 18
 };
 
-// ── RPC helpers (with fallback chain) ──
+// ── RPC helpers (with fallback chain, chain-aware via AsyncLocalStorage) ──
 async function rpcCall(method, params) {
   let lastErr;
-  for (const url of RPC_URLS) {
+  for (const url of getRpcs()) {
     try {
       const r = await fetch(url, {
         method: 'POST',
@@ -359,12 +398,6 @@ async function readGaugeStakedByIndex(gaugeAddress, wallet, idx) {
   return BigInt(r).toString();
 }
 
-// Known NPM addresses on Base
-const KNOWN_NPMS = [
-  { name: 'Aerodrome SlipStream', address: '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', kind: 'slipstream' },
-  { name: 'Uniswap V3',           address: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1', kind: 'uniswap' }
-];
-
 // ── Enumerate user's NFTs on a NPM, filter by pool match ──
 // Mengecek: (a) NFT yg masih di-hold wallet di NPM, dan (b) NFT yg di-stake ke gauge (kalau gauge address ada)
 async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAddress) {
@@ -388,7 +421,7 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
   }
 
   // (A) Enumerate via NPM ownership (unstaked NFTs masih di wallet)
-  for (const npm of KNOWN_NPMS) {
+  for (const npm of getNpms()) {
     let count = 0;
     try { count = await readNftBalance(npm.address, walletAddress); }
     catch { diag.npmCounts[npm.name] = 'err'; continue; }
@@ -410,7 +443,7 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
     try {
       const stakedCount = await readGaugeStakedLength(gaugeAddress, walletAddress);
       diag.gaugeStakedCount = stakedCount;
-      const aeroNpm = KNOWN_NPMS.find(n => n.kind === 'slipstream');
+      const aeroNpm = getNpms().find(n => n.kind === 'slipstream');
       const limit = Math.min(stakedCount, 50);
       for (let i = 0; i < limit; i++) {
         let tokenId;
@@ -539,44 +572,45 @@ module.exports = async function handler(req, res) {
     let s=''; req.on('data', c => s += c); req.on('end', () => { try { r(JSON.parse(s)); } catch { r({}); } });
   });
 
-  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress } = body;
+  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress, chain } = body;
+  const chainKey = (chain && CHAINS[chain]) ? chain : 'base';
 
-  // ── Mode B: findByPool (input pool address + wallet, output all matching positions) ──
-  if (mode === 'findByPool') {
-    if (!poolAddress || !walletAddress) {
-      return res.status(400).json({ error: 'findByPool requires: poolAddress, walletAddress' });
+  return chainCtx.run({ chainKey }, async () => {
+    // ── Mode B: findByPool (input pool address + wallet, output all matching positions) ──
+    if (mode === 'findByPool') {
+      if (!poolAddress || !walletAddress) {
+        return res.status(400).json({ error: 'findByPool requires: poolAddress, walletAddress' });
+      }
+      try {
+        const poolMeta = await readPoolMeta(poolAddress);
+        const { results: matches, diag } = await findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAddress);
+        if (!matches.length) {
+          return res.status(200).json({ ok: true, mode: 'findByPool', chain: chainKey, poolAddress, walletAddress, poolMeta, positions: [], diag, message: `Tidak ada NFT LP milik wallet ini di pool tersebut di chain ${CHAINS[chainKey].name} (wallet maupun staked di gauge).` });
+        }
+        const positions = [];
+        for (const m of matches) {
+          try {
+            const inner = await readFullPosition(m.npmAddress, m.tokenId, poolAddress, gaugeAddress, walletAddress, m.position);
+            positions.push({ ...inner, chain: chainKey, npmName: m.npmName, npmKind: m.npmKind, source: m.source });
+          } catch (e) {
+            positions.push({ ok: false, chain: chainKey, tokenId: m.tokenId, npmAddress: m.npmAddress, error: e.message, source: m.source });
+          }
+        }
+        return res.status(200).json({ ok: true, mode: 'findByPool', chain: chainKey, poolAddress, walletAddress, poolMeta, positions, diag });
+      } catch (e) {
+        return res.status(500).json({ error: 'findByPool failed', detail: e.message, chain: chainKey });
+      }
+    }
+
+    // ── Mode A (default): tokenId-based read ──
+    if (!tokenId || !npmAddress || !poolAddress) {
+      return res.status(400).json({ error: 'Required: tokenId, npmAddress, poolAddress (atau pakai mode=findByPool)' });
     }
     try {
-      const poolMeta = await readPoolMeta(poolAddress);
-      const { results: matches, diag } = await findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAddress);
-      if (!matches.length) {
-        return res.status(200).json({ ok: true, mode: 'findByPool', poolAddress, walletAddress, poolMeta, positions: [], diag, message: 'Tidak ada NFT LP milik wallet ini di pool tersebut (wallet maupun staked di gauge).' });
-      }
-      // For each match, run full position-read pipeline
-      const positions = [];
-      for (const m of matches) {
-        try {
-          const inner = await readFullPosition(m.npmAddress, m.tokenId, poolAddress, gaugeAddress, walletAddress, m.position);
-          positions.push({ ...inner, npmName: m.npmName, npmKind: m.npmKind, source: m.source });
-        } catch (e) {
-          positions.push({ ok: false, tokenId: m.tokenId, npmAddress: m.npmAddress, error: e.message, source: m.source });
-        }
-      }
-      return res.status(200).json({ ok: true, mode: 'findByPool', poolAddress, walletAddress, poolMeta, positions, diag });
+      const result = await readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, walletAddress);
+      return res.status(200).json({ ...result, chain: chainKey });
     } catch (e) {
-      return res.status(500).json({ error: 'findByPool failed', detail: e.message });
+      return res.status(500).json({ error: 'Position read failed', detail: e.message, chain: chainKey });
     }
-  }
-
-  // ── Mode A (default): tokenId-based read ──
-  if (!tokenId || !npmAddress || !poolAddress) {
-    return res.status(400).json({ error: 'Required: tokenId, npmAddress, poolAddress (atau pakai mode=findByPool)' });
-  }
-
-  try {
-    const result = await readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, walletAddress);
-    return res.status(200).json(result);
-  } catch (e) {
-    return res.status(500).json({ error: 'Position read failed', detail: e.message });
-  }
+  });
 };
