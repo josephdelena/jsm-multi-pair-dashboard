@@ -117,11 +117,21 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
     if (!mintBlock) mintBlock = parseInt(log.blockNumber, 16);
   }
 
+  // Ambil timestamp blok mint pertama (untuk hitung umur posisi)
+  let mintTimestamp = null;
+  if (mintBlock != null) {
+    try {
+      const blk = await rpcCall('eth_getBlockByNumber', ['0x' + mintBlock.toString(16), false]);
+      if (blk && blk.timestamp) mintTimestamp = parseInt(blk.timestamp, 16);
+    } catch {}
+  }
+
   return {
     amount0Total: Number(totalAmount0) / Math.pow(10, token0Info.decimals),
     amount1Total: Number(totalAmount1) / Math.pow(10, token1Info.decimals),
     usdValue: totalUsd,
     mintBlock,
+    mintTimestamp,
     mintCount: logs.length
   };
 }

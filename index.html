@@ -2934,6 +2934,19 @@ function plInit() {
   if (gf && !gf.value) gf.value = lastGauge;
 }
 
+// Format umur dari unix timestamp jadi "3 jam 12 menit" / "2 hari 5 jam" / "47 menit"
+function plFormatAge(unixSec) {
+  if (!unixSec) return '—';
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - unixSec);
+  const d = Math.floor(diff / 86400);
+  const h = Math.floor((diff % 86400) / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  if (d > 0) return `${d} hari ${h} jam`;
+  if (h > 0) return `${h} jam ${m} menit`;
+  if (m > 0) return `${m} menit`;
+  return `${diff} detik`;
+}
+
 function plSetStatus(html, tone) {
   const el = document.getElementById('pl_status');
   if (!el) return;
@@ -3058,7 +3071,7 @@ function plRenderPositions(data) {
         <div style="background:#0d1219; border:1px solid #1f2638; border-radius:6px; padding:14px">
           <div style="font-size:10px; color:#9ca3af; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:8px">💰 Modal Pas Masuk Pool</div>
           <div style="font-size:22px; font-weight:700; color:#fbbf24; font-family:monospace">${modal !== null ? '$'+modal.toFixed(2) : '— (gak ketemu mint event)'}</div>
-          ${p.originalDeposit && p.originalDeposit.mintBlock ? `<div style="font-size:10px; color:#6b7280; margin-top:4px">Mint block ${p.originalDeposit.mintBlock} · ${p.originalDeposit.mintCount || 1} event</div>` : ''}
+          ${p.originalDeposit && p.originalDeposit.mintBlock ? `<div style="font-size:10px; color:#6b7280; margin-top:4px">Mint block ${p.originalDeposit.mintBlock} · ${p.originalDeposit.mintCount || 1} event${p.originalDeposit.mintTimestamp ? ` · <span style="color:#9ca3af">⏱ Umur: ${plFormatAge(p.originalDeposit.mintTimestamp)}</span>` : ''}</div>` : ''}
           ${p.originalDeposit && p.originalDeposit.error ? `<div style="font-size:10px; color:#f87171; margin-top:4px">⚠ ${p.originalDeposit.error}</div>` : ''}
         </div>
         <!-- KANAN: PnL -->
