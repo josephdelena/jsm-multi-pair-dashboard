@@ -241,6 +241,7 @@
     <button class="tab" data-tab="solcalc" onclick="switchTab('solcalc')">☀️ SOLCALC</button>
     <button class="tab" data-tab="ethcalc" onclick="switchTab('ethcalc')">⟠ ETHCALC</button>
     <button class="tab" data-tab="btccalc" onclick="switchTab('btccalc')">₿ BTCCALC</button>
+    <button class="tab" data-tab="poollookup" onclick="switchTab('poollookup')">🔍 Pool Lookup</button>
   </div>
 
   <!-- ── TAB: DASHBOARD ── -->
@@ -1099,6 +1100,46 @@
       </div>
     </div>
   </div><!-- /tab-btccalc -->
+
+  <!-- ── TAB: POOL LOOKUP ── -->
+  <div class="tab-pane" id="tab-poollookup">
+    <div style="background:#0a1a1f; border:1px solid #38bdf8; border-radius:8px; padding:14px; margin-bottom:14px">
+      <div style="font-size:12px; color:#38bdf8; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:4px">🔍 Pool Lookup — Cari Posisi LP by Pool Address</div>
+      <div style="font-size:11px; color:#9ca3af">Tinggal masukin pool address. Wallet kamu (cached) di-scan otomatis di Aerodrome SlipStream + Uniswap V3 NPM. Output: modal pas masuk USD + PnL on-chain per NFT.</div>
+    </div>
+
+    <!-- INPUT -->
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="font-size:11px; color:#38bdf8; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:12px">Input</div>
+      <div style="display:grid; grid-template-columns: 2fr 1fr; gap:12px; align-items:end">
+        <div class="field">
+          <label>Pool Address</label>
+          <input type="text" id="pl_pool" placeholder="0x..." style="font-family:monospace; font-size:12px">
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="btn" onclick="plLookup()" style="width:100%; background:#38bdf8; color:#0a1f2a; font-weight:700">🔍 Cari Posisi</button>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns: 2fr 1fr; gap:12px; margin-top:10px">
+        <div class="field">
+          <label>Wallet (dari cache, edit kalau perlu)</label>
+          <input type="text" id="pl_wallet" placeholder="0x..." style="font-family:monospace; font-size:12px">
+        </div>
+        <div class="field">
+          <label>Gauge Address (opsional, untuk AERO emissions)</label>
+          <input type="text" id="pl_gauge" placeholder="0x... (opsional)" style="font-family:monospace; font-size:12px">
+        </div>
+      </div>
+      <div style="margin-top:10px; font-size:10px; color:#6b7280">
+        💡 Tip: kalau pool nya Aerodrome SlipStream dan kamu mau lihat AERO emissions, isi gauge address. Kalau kosong, gauge skip.
+      </div>
+    </div>
+
+    <!-- STATUS / RESULTS -->
+    <div id="pl_status" style="display:none; background:#131826; border:1px solid #1f2638; border-radius:8px; padding:14px; margin-bottom:14px; font-size:12px"></div>
+    <div id="pl_results"></div>
+  </div><!-- /tab-poollookup -->
 
 </div><!-- /container -->
 
@@ -2874,6 +2915,223 @@ async function refreshPrices() {
   await refreshPrices();
   setInterval(refreshPrices, 30000); // refresh harga tiap 30 detik
   setInterval(autoResyncChains, 60000); // cek chain data tiap 60 detik (resync kalau > 2 menit stale)
+})();
+
+// ────────────────────────────────────────────────────────────────────────────────
+// POOL LOOKUP TAB — input pool address only, scan wallet's NFTs, output modal+PnL
+// ────────────────────────────────────────────────────────────────────────────────
+
+// Pre-fill wallet field from cache on tab open
+function plInit() {
+  const w = localStorage.getItem('jsm-wallet') || '';
+  const lastPool = localStorage.getItem('jsm-pl-pool') || '';
+  const lastGauge = localStorage.getItem('jsm-pl-gauge') || '';
+  const wf = document.getElementById('pl_wallet');
+  const pf = document.getElementById('pl_pool');
+  const gf = document.getElementById('pl_gauge');
+  if (wf && !wf.value) wf.value = w;
+  if (pf && !pf.value) pf.value = lastPool;
+  if (gf && !gf.value) gf.value = lastGauge;
+}
+
+function plSetStatus(html, tone) {
+  const el = document.getElementById('pl_status');
+  if (!el) return;
+  if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  const color = tone === 'err' ? '#f87171' : tone === 'ok' ? '#6ee7b7' : tone === 'warn' ? '#fbbf24' : '#9ca3af';
+  el.style.borderColor = tone === 'err' ? '#7f1d1d' : tone === 'ok' ? '#064e3b' : tone === 'warn' ? '#7c2d12' : '#1f2638';
+  el.innerHTML = `<span style="color:${color}">${html}</span>`;
+}
+
+async function plLookup() {
+  const pool = (document.getElementById('pl_pool').value || '').trim();
+  let wallet = (document.getElementById('pl_wallet').value || '').trim();
+  const gauge = (document.getElementById('pl_gauge').value || '').trim();
+
+  if (!/^0x[a-fA-F0-9]{40}$/.test(pool)) {
+    plSetStatus('Pool address gak valid. Format: 0x... (40 hex chars)', 'err');
+    return;
+  }
+  if (!wallet) {
+    wallet = prompt('Wallet address kamu (akan di-cache):', '');
+    if (!wallet) return;
+    document.getElementById('pl_wallet').value = wallet;
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+    plSetStatus('Wallet address gak valid.', 'err');
+    return;
+  }
+
+  // Cache untuk next time
+  localStorage.setItem('jsm-wallet', wallet);
+  localStorage.setItem('jsm-pl-pool', pool);
+  if (gauge) localStorage.setItem('jsm-pl-gauge', gauge); else localStorage.removeItem('jsm-pl-gauge');
+
+  plSetStatus('⏳ Scan NFT di Aerodrome SlipStream + Uniswap V3 NPM... (bisa 10-30 detik tergantung RPC)', 'warn');
+  document.getElementById('pl_results').innerHTML = '';
+
+  try {
+    const r = await fetch('/api/position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'findByPool',
+        walletAddress: wallet,
+        poolAddress: pool,
+        gaugeAddress: gauge || undefined
+      })
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) {
+      plSetStatus(`❌ Error: ${data.error || 'Unknown'}${data.detail ? ' — ' + data.detail : ''}`, 'err');
+      return;
+    }
+    if (!data.positions || !data.positions.length) {
+      plSetStatus(`ℹ️ Gak ada NFT LP milik wallet ini di pool tersebut.<br><span style="color:#6b7280; font-size:10px">Pool tokens: ${data.poolMeta?.token0 || '—'} / ${data.poolMeta?.token1 || '—'}</span>`, 'warn');
+      return;
+    }
+    plSetStatus(`✓ Ketemu ${data.positions.length} posisi di pool ini.`, 'ok');
+    plRenderPositions(data);
+  } catch (e) {
+    plSetStatus(`❌ Network error: ${e.message}`, 'err');
+  }
+}
+
+function plRenderPositions(data) {
+  const container = document.getElementById('pl_results');
+  const aeroPriceUsd = (typeof prices !== 'undefined' && prices['AEROUSDT']) || 0;
+
+  const cards = data.positions.map((p, idx) => {
+    if (!p.ok) {
+      return `<div style="background:#1f1818; border:1px solid #7f1d1d; border-radius:8px; padding:14px; margin-bottom:12px">
+        <div style="color:#f87171; font-weight:600">❌ NFT #${p.tokenId} — gagal baca</div>
+        <div style="color:#9ca3af; font-size:11px; margin-top:4px">${p.error || ''}</div>
+      </div>`;
+    }
+
+    // Modal entry USD (dari on-chain mint event)
+    const modal = (p.originalDeposit && typeof p.originalDeposit.usdValue === 'number') ? p.originalDeposit.usdValue : null;
+
+    // Current value USD: amount × price. Tahu salah satu token USDC?
+    const s0 = (p.token0.symbol || '').toUpperCase();
+    const s1 = (p.token1.symbol || '').toUpperCase();
+    let curUsd = 0;
+    if (s0 === 'USDC' || s0 === 'USDBC') curUsd = p.token0.amount + (p.currentPrice ? p.token1.amount / p.currentPrice : 0);
+    else if (s1 === 'USDC' || s1 === 'USDBC') curUsd = p.token1.amount + p.token0.amount * p.currentPrice;
+    else curUsd = 0; // non-USDC pool, butuh price source eksternal — biarkan 0 sebagai sinyal
+
+    // Fees USD (gauge auto-collect biasanya bikin 0 di SlipStream)
+    let feesUsd = 0;
+    if (s0 === 'USDC' || s0 === 'USDBC') feesUsd = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0);
+    else if (s1 === 'USDC' || s1 === 'USDBC') feesUsd = p.token1.fees + p.token0.fees * p.currentPrice;
+
+    // AERO USD
+    const aeroAmt = (typeof p.aeroEarned === 'number') ? p.aeroEarned : 0;
+    const aeroUsd = aeroAmt * aeroPriceUsd;
+
+    // PnL
+    const pnlUsd = modal ? (curUsd + feesUsd + aeroUsd - modal) : null;
+    const pnlPct = modal ? (pnlUsd / modal * 100) : null;
+    const pnlColor = pnlUsd === null ? '#9ca3af' : pnlUsd >= 0 ? '#6ee7b7' : '#f87171';
+    const pnlSign = pnlUsd === null ? '' : (pnlUsd >= 0 ? '+' : '');
+
+    const rangeBadge = p.inRange
+      ? '<span style="color:#6ee7b7; font-size:10px">● IN-RANGE</span>'
+      : '<span style="color:#f87171; font-size:10px">● OUT-RANGE</span>';
+
+    return `
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+        <div>
+          <div style="font-size:13px; font-weight:700; color:#d0d8e0">NFT #${p.tokenId} — ${p.token0.symbol}/${p.token1.symbol}</div>
+          <div style="font-size:10px; color:#6b7280; margin-top:2px">${p.npmName || ''} · ${rangeBadge}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
+          <div style="font-family:monospace; font-size:13px; color:#d0d8e0">${p.currentPrice ? p.currentPrice.toFixed(p.currentPrice < 1 ? 6 : 4) : '—'}</div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:14px">
+        <!-- KIRI: Modal pas masuk -->
+        <div style="background:#0d1219; border:1px solid #1f2638; border-radius:6px; padding:14px">
+          <div style="font-size:10px; color:#9ca3af; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:8px">💰 Modal Pas Masuk Pool</div>
+          <div style="font-size:22px; font-weight:700; color:#fbbf24; font-family:monospace">${modal !== null ? '$'+modal.toFixed(2) : '— (gak ketemu mint event)'}</div>
+          ${p.originalDeposit && p.originalDeposit.mintBlock ? `<div style="font-size:10px; color:#6b7280; margin-top:4px">Mint block ${p.originalDeposit.mintBlock} · ${p.originalDeposit.mintCount || 1} event</div>` : ''}
+          ${p.originalDeposit && p.originalDeposit.error ? `<div style="font-size:10px; color:#f87171; margin-top:4px">⚠ ${p.originalDeposit.error}</div>` : ''}
+        </div>
+        <!-- KANAN: PnL -->
+        <div style="background:#0d1219; border:1px solid #1f2638; border-radius:6px; padding:14px">
+          <div style="font-size:10px; color:#9ca3af; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:8px">📈 PnL On-Chain</div>
+          <div style="font-size:22px; font-weight:700; color:${pnlColor}; font-family:monospace">${pnlUsd !== null ? pnlSign+'$'+pnlUsd.toFixed(2) : '—'}</div>
+          <div style="font-size:11px; color:${pnlColor}; margin-top:2px; font-family:monospace">${pnlPct !== null ? pnlSign+pnlPct.toFixed(2)+'%' : ''}</div>
+        </div>
+      </div>
+
+      <!-- Breakdown -->
+      <div style="background:#0a0e16; border-radius:6px; padding:12px; font-size:11px">
+        <div style="color:#9ca3af; letter-spacing:0.08em; text-transform:uppercase; font-size:10px; margin-bottom:8px">Breakdown</div>
+        <table style="width:100%; font-family:monospace">
+          <tr><td style="padding:3px 0; color:#9ca3af">${p.token0.symbol} di LP</td><td style="text-align:right; color:#d0d8e0">${p.token0.amount.toFixed(p.token0.amount < 1 ? 6 : 4)}</td></tr>
+          <tr><td style="padding:3px 0; color:#9ca3af">${p.token1.symbol} di LP</td><td style="text-align:right; color:#d0d8e0">${p.token1.amount.toFixed(p.token1.amount < 1 ? 6 : 4)}</td></tr>
+          <tr style="border-top:1px solid #1f2638"><td style="padding:6px 0; color:#9ca3af">Value sekarang (USD)</td><td style="text-align:right; color:#d0d8e0; font-weight:600">$${curUsd.toFixed(2)}</td></tr>
+          <tr><td style="padding:3px 0; color:#9ca3af">Fee LP (trading) USD</td><td style="text-align:right; color:#6ee7b7">$${feesUsd.toFixed(4)}</td></tr>
+          ${aeroAmt ? `<tr><td style="padding:3px 0; color:#9ca3af">AERO earned</td><td style="text-align:right; color:#6ee7b7">${aeroAmt.toFixed(4)} AERO ${aeroPriceUsd ? `($${aeroUsd.toFixed(2)})` : '<span style="color:#6b7280">(price n/a)</span>'}</td></tr>` : ''}
+          <tr style="border-top:1px solid #1f2638"><td style="padding:6px 0; color:#9ca3af">Range Pa — Pb</td><td style="text-align:right; color:#d0d8e0">${p.rangeLower ? p.rangeLower.toFixed(p.rangeLower < 1 ? 6 : 4) : '—'} — ${p.rangeUpper ? p.rangeUpper.toFixed(p.rangeUpper < 1 ? 6 : 4) : '—'}</td></tr>
+        </table>
+      </div>
+
+      ${(s0 !== 'USDC' && s0 !== 'USDBC' && s1 !== 'USDC' && s1 !== 'USDBC') ? `
+        <div style="margin-top:10px; padding:8px; background:#1a1408; border-left:2px solid #f59e0b; border-radius:3px; font-size:10px; color:#fbbf24">
+          ⚠ Pool ini bukan USDC pair — Value USD perlu price source eksternal (saat ini ditampilkan $0). Modal entry tetap akurat (dari mint event).
+        </div>
+      ` : ''}
+    </div>`;
+  }).join('');
+
+  // Summary di atas kalau >1 posisi
+  let summary = '';
+  if (data.positions.length > 1) {
+    let totalModal = 0, totalCur = 0, totalFees = 0, totalAero = 0;
+    for (const p of data.positions) {
+      if (!p.ok) continue;
+      if (p.originalDeposit && typeof p.originalDeposit.usdValue === 'number') totalModal += p.originalDeposit.usdValue;
+      const s0 = (p.token0.symbol || '').toUpperCase();
+      const s1 = (p.token1.symbol || '').toUpperCase();
+      let curU = 0, feU = 0;
+      if (s0 === 'USDC' || s0 === 'USDBC') { curU = p.token0.amount + (p.currentPrice ? p.token1.amount / p.currentPrice : 0); feU = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0); }
+      else if (s1 === 'USDC' || s1 === 'USDBC') { curU = p.token1.amount + p.token0.amount * p.currentPrice; feU = p.token1.fees + p.token0.fees * p.currentPrice; }
+      totalCur += curU;
+      totalFees += feU;
+      if (typeof p.aeroEarned === 'number') totalAero += p.aeroEarned * aeroPriceUsd;
+    }
+    const totPnl = totalModal ? (totalCur + totalFees + totalAero - totalModal) : 0;
+    const totPnlPct = totalModal ? (totPnl / totalModal * 100) : 0;
+    const c = totPnl >= 0 ? '#6ee7b7' : '#f87171';
+    const sgn = totPnl >= 0 ? '+' : '';
+    summary = `
+    <div style="background:#0a1a1f; border:1px solid #38bdf8; border-radius:8px; padding:14px; margin-bottom:14px">
+      <div style="font-size:11px; color:#38bdf8; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:10px">Summary ${data.positions.length} Posisi</div>
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; font-family:monospace">
+        <div><div style="font-size:10px; color:#9ca3af">Total Modal Masuk</div><div style="font-size:18px; color:#fbbf24; font-weight:700">$${totalModal.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Total Value Sekarang</div><div style="font-size:18px; color:#d0d8e0; font-weight:700">$${totalCur.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Total PnL</div><div style="font-size:18px; color:${c}; font-weight:700">${sgn}$${totPnl.toFixed(2)} (${sgn}${totPnlPct.toFixed(2)}%)</div></div>
+      </div>
+    </div>`;
+  }
+
+  container.innerHTML = summary + cards;
+}
+
+// Hook into switchTab: pre-fill on tab open
+(function() {
+  const origSwitch = window.switchTab;
+  window.switchTab = function(name) {
+    const r = origSwitch ? origSwitch(name) : undefined;
+    if (name === 'poollookup') plInit();
+    return r;
+  };
 })();
 </script>
 </body>
