@@ -948,6 +948,79 @@ module.exports = async function handler(req, res) {
   const chainKey = (chain && CHAINS[chain]) ? chain : 'base';
 
   return chainCtx.run({ chainKey }, async () => {
+    // ── Mode D: parseTx — RPC-only, extract tokenId + pool dari log receipt 1 tx ──
+    if (mode === 'parseTx') {
+      if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+        return res.status(400).json({ error: 'parseTx requires: txHash (0x...64 hex)' });
+      }
+      try {
+        const receipt = await rpcCall('eth_getTransactionReceipt', [txHash]);
+        if (!receipt || !receipt.logs) return res.status(404).json({ error: 'Tx receipt gak ketemu / belum confirmed' });
+        const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+        const INCREASE_TOPIC = '0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
+        const DECREASE_TOPIC = '0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4';
+        const COLLECT_TOPIC  = '0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01';
+
+        const npmAddrs = getNpms().map(n => n.address.toLowerCase());
+        const npmByAddr = Object.fromEntries(getNpms().map(n => [n.address.toLowerCase(), n]));
+
+        const tokenIdSet = new Set();
+        const eventsByTokenId = {};
+
+        for (const log of receipt.logs) {
+          const addr = (log.address || '').toLowerCase();
+          if (!npmAddrs.includes(addr)) continue;
+          const t0 = log.topics[0];
+          if (t0 === TRANSFER_TOPIC && log.topics[3]) {
+            const tid = BigInt(log.topics[3]).toString();
+            tokenIdSet.add(tid);
+            (eventsByTokenId[tid] = eventsByTokenId[tid] || []).push({ type: 'Transfer', npm: addr, from: ('0x' + log.topics[1].slice(-40)).toLowerCase(), to: ('0x' + log.topics[2].slice(-40)).toLowerCase() });
+          } else if (t0 === INCREASE_TOPIC && log.topics[1]) {
+            const tid = BigInt(log.topics[1]).toString();
+            tokenIdSet.add(tid);
+            const data = log.data.replace('0x', '');
+            (eventsByTokenId[tid] = eventsByTokenId[tid] || []).push({ type: 'IncreaseLiquidity', npm: addr, liquidity: hex2BN(data.slice(0, 64)).toString(), amount0: hex2BN(data.slice(64, 128)).toString(), amount1: hex2BN(data.slice(128, 192)).toString() });
+          } else if (t0 === DECREASE_TOPIC && log.topics[1]) {
+            const tid = BigInt(log.topics[1]).toString();
+            tokenIdSet.add(tid);
+            const data = log.data.replace('0x', '');
+            (eventsByTokenId[tid] = eventsByTokenId[tid] || []).push({ type: 'DecreaseLiquidity', npm: addr, liquidity: hex2BN(data.slice(0, 64)).toString(), amount0: hex2BN(data.slice(64, 128)).toString(), amount1: hex2BN(data.slice(128, 192)).toString() });
+          } else if (t0 === COLLECT_TOPIC && log.topics[1]) {
+            const tid = BigInt(log.topics[1]).toString();
+            tokenIdSet.add(tid);
+            const data = log.data.replace('0x', '');
+            (eventsByTokenId[tid] = eventsByTokenId[tid] || []).push({ type: 'Collect', npm: addr, recipient: ('0x' + data.slice(24, 64)).toLowerCase(), amount0: hex2BN(data.slice(64, 128)).toString(), amount1: hex2BN(data.slice(128, 192)).toString() });
+          }
+        }
+
+        // For each tokenId, try positions() to get pool info (token0, token1, fee/tickSpacing)
+        const results = [];
+        for (const tid of tokenIdSet) {
+          const evs = eventsByTokenId[tid] || [];
+          const npmHit = evs.find(e => e.npm)?.npm;
+          let posInfo = null, err = null;
+          if (npmHit) {
+            try { posInfo = await readPosition(npmHit, tid); } catch (e) { err = e.message; }
+          }
+          results.push({
+            tokenId: tid,
+            npmAddress: npmHit,
+            npmName: npmHit ? npmByAddr[npmHit]?.name : null,
+            events: evs,
+            position: posInfo ? {
+              token0: posInfo.token0, token1: posInfo.token1, feeOrSpacing: posInfo.fee,
+              liquidity: posInfo.liquidity.toString(),
+              tickLower: posInfo.tickLower, tickUpper: posInfo.tickUpper
+            } : null,
+            positionError: err
+          });
+        }
+        return res.status(200).json({ ok: true, mode: 'parseTx', chain: chainKey, txHash, blockNumber: parseInt(receipt.blockNumber, 16), tokenIds: results });
+      } catch (e) {
+        return res.status(500).json({ error: 'parseTx failed', detail: e.message });
+      }
+    }
+
     // ── Mode C: findClosed (scan recent txs via Basescan, list candidate closed positions) ──
     if (mode === 'findClosed') {
       if (!walletAddress || !basescanKey) {

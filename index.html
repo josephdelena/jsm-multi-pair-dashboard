@@ -1151,6 +1151,26 @@
       </div>
     </div>
 
+    <!-- PARSE TX HASH (RPC-only, no API needed) -->
+    <details style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:14px; margin-bottom:14px">
+      <summary style="cursor:pointer; font-size:12px; color:#38bdf8; font-weight:600">🧾 Extract dari Tx Hash (kalau tau hash close tx, RPC-only — gak butuh API)</summary>
+      <div style="margin-top:12px">
+        <div style="display:grid; grid-template-columns: 4fr 1fr; gap:12px; align-items:end">
+          <div class="field">
+            <label>Tx Hash (close / open / decrease / collect)</label>
+            <input type="text" id="pl_txhash" placeholder="0x... (64 hex)" style="font-family:monospace; font-size:11px">
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button class="btn" onclick="plParseTx()" style="width:100%; background:#38bdf8; color:#0a1f2a; font-weight:700">🧾 Extract</button>
+          </div>
+        </div>
+        <div style="margin-top:8px; font-size:10px; color:#6b7280">Paste tx hash dari Basescan website (manual cari di history wallet). Saya parse log on-chain → extract NFT tokenId + pool address. Lalu auto-isi ke field Pool Address + Token ID Manual di atas.</div>
+        <div id="pl_txstatus" style="display:none; margin-top:10px; font-size:11px"></div>
+        <div id="pl_txresults" style="margin-top:10px"></div>
+      </div>
+    </details>
+
     <!-- AUTO-SCAN CLOSED POSITIONS (collapsible) -->
     <details style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:14px; margin-bottom:14px">
       <summary style="cursor:pointer; font-size:12px; color:#a78bfa; font-weight:600">🔎 Auto-scan closed positions (butuh Basescan API key)</summary>
@@ -3284,6 +3304,79 @@ function plFormatAge(unixSec) {
   if (h > 0) return `${h} jam ${m} menit`;
   if (m > 0) return `${m} menit`;
   return `${diff} detik`;
+}
+
+async function plParseTx() {
+  const hash = (document.getElementById('pl_txhash').value || '').trim();
+  const chain = document.getElementById('pl_chain').value || 'base';
+  if (!/^0x[a-fA-F0-9]{64}$/.test(hash)) {
+    plTxSetStatus('Tx hash gak valid (harus 0x... 64 hex chars)', 'err');
+    return;
+  }
+  plTxSetStatus('⏳ Fetching tx receipt + parsing logs...', 'warn');
+  document.getElementById('pl_txresults').innerHTML = '';
+  try {
+    const r = await fetch('/api/position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'parseTx', chain, txHash: hash })
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) { plTxSetStatus(`❌ ${data.error || 'error'}${data.detail ? ' — ' + data.detail : ''}`, 'err'); return; }
+    if (!data.tokenIds || !data.tokenIds.length) {
+      plTxSetStatus('ℹ️ Gak ada NFT LP event di tx ini (Transfer/Increase/Decrease/Collect). Mungkin bukan tx terkait posisi LP.', 'warn');
+      return;
+    }
+    plTxSetStatus(`✓ Ketemu ${data.tokenIds.length} tokenId(s) di tx ini`, 'ok');
+    plTxRenderResults(data);
+  } catch (e) {
+    plTxSetStatus(`❌ Network error: ${e.message}`, 'err');
+  }
+}
+
+function plTxSetStatus(msg, tone) {
+  const el = document.getElementById('pl_txstatus');
+  if (!msg) { el.style.display = 'none'; return; }
+  const color = tone === 'err' ? '#f87171' : tone === 'ok' ? '#6ee7b7' : tone === 'warn' ? '#fbbf24' : '#9ca3af';
+  el.style.display = 'block';
+  el.style.color = color;
+  el.innerHTML = msg;
+}
+
+function plTxRenderResults(data) {
+  const rows = data.tokenIds.map(t => {
+    const ev = (t.events || []).map(e => e.type).join(', ');
+    const tokens = t.position ? `${t.position.token0.slice(0,10)}... / ${t.position.token1.slice(0,10)}... fee=${t.position.feeOrSpacing}` : '(pos gagal: ' + (t.positionError || '?') + ')';
+    return `
+      <tr style="border-bottom:1px solid #1f2638">
+        <td style="padding:8px; font-family:monospace; color:#d0d8e0; font-weight:600">#${t.tokenId}</td>
+        <td style="padding:8px; font-size:11px; color:#a78bfa">${t.npmName || '—'}</td>
+        <td style="padding:8px; font-size:10px; color:#9ca3af; font-family:monospace">${tokens}</td>
+        <td style="padding:8px; font-size:10px; color:#94a3b8">${ev}</td>
+        <td style="padding:8px; text-align:right">
+          <button onclick="plTxUseTokenId('${t.tokenId}', '${t.position ? t.position.token0 + ',' + t.position.token1 : ''}')" style="background:#6ee7b7; color:#064e3b; border:none; padding:4px 10px; border-radius:3px; cursor:pointer; font-size:11px; font-weight:700">↑ Pakai TokenId</button>
+        </td>
+      </tr>`;
+  }).join('');
+  document.getElementById('pl_txresults').innerHTML = `
+    <div style="overflow-x:auto"><table style="width:100%; border-collapse:collapse">
+      <thead style="background:#0d1219"><tr>
+        <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">TokenId</th>
+        <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">NPM</th>
+        <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">Position (token0/token1/fee)</th>
+        <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:left">Events</th>
+        <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; text-align:right">Aksi</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table></div>
+    <div style="margin-top:8px; font-size:10px; color:#6b7280">💡 Klik <b>↑ Pakai TokenId</b> buat auto-isi tokenId-nya ke field Token ID Manual. Pool address-nya kamu cari sendiri (mis. dari URL vfat atau klik token0 di Basescan → ke pool page).</div>`;
+}
+
+function plTxUseTokenId(tokenId, tokensCsv) {
+  const tf = document.getElementById('pl_tokenids');
+  if (tf) tf.value = tokenId;
+  plTxSetStatus(`✓ TokenId #${tokenId} di-isi ke field Token ID Manual. Lengkapi Pool Address + klik 🔍 Cari Posisi di atas.`, 'ok');
+  // Scroll ke pool address field
+  document.getElementById('pl_pool')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 async function plScanClosed() {
