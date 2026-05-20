@@ -321,7 +321,10 @@ const TOKEN_DECIMALS = {
 };
 
 // ── RPC helpers (with fallback chain, chain-aware via AsyncLocalStorage) ──
-async function rpcCall(method, params) {
+async function rpcCall(method, params, opts = {}) {
+  // Some methods (eth_getTransactionReceipt) return null kalau RPC node-nya gak punya tx itu —
+  // bukan error, tapi means "try next RPC". Set rejectNull = true untuk auto-retry.
+  const rejectNull = opts.rejectNull || method === 'eth_getTransactionReceipt' || method === 'eth_getTransactionByHash';
   let lastErr;
   for (const url of getRpcs()) {
     try {
@@ -333,7 +336,6 @@ async function rpcCall(method, params) {
       if (!r.ok) { lastErr = new Error(`HTTP ${r.status} @ ${url}`); continue; }
       const data = await r.json();
       if (data.error) {
-        // Rate limit or transient — try next RPC
         const msg = (data.error.message || '').toLowerCase();
         if (msg.includes('rate') || msg.includes('limit') || msg.includes('too many')) {
           lastErr = new Error(`RPC: ${data.error.message}`);
@@ -341,12 +343,17 @@ async function rpcCall(method, params) {
         }
         throw new Error(`RPC: ${data.error.message}`);
       }
+      if (rejectNull && (data.result === null || data.result === undefined)) {
+        lastErr = new Error(`null result @ ${url}`);
+        continue;
+      }
       return data.result;
     } catch (e) {
       lastErr = e;
-      // Network error → try next
     }
   }
+  // Kalau semua RPC return null (untuk method yg rejectNull), return null sebagai "genuinely not found"
+  if (rejectNull) return null;
   throw lastErr || new Error('All RPCs failed');
 }
 
