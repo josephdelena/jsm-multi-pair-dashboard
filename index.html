@@ -3070,6 +3070,9 @@ async function plRefreshEntry(addedAt, silent) {
     let curUsd = 0, feesUsd = 0;
     if (s0 === 'USDC' || s0 === 'USDBC') { curUsd = p.token0.amount + (p.currentPrice ? p.token1.amount / p.currentPrice : 0); feesUsd = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0); }
     else if (s1 === 'USDC' || s1 === 'USDBC') { curUsd = p.token1.amount + p.token0.amount * p.currentPrice; feesUsd = p.token1.fees + p.token0.fees * p.currentPrice; }
+    // Solidly-style ecosystem (Aerodrome/Velodrome SlipStream): trading fees diteruskan ke voters
+    // (FeesVotingReward), bukan LP. LP cuma dapat emissions. Untuk posisi staked, fees LP = 0.
+    if (p.source === 'staked' && (p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || ''))) feesUsd = 0;
     const rewardSymbol = p.rewardSymbol || e.rewardSymbol || 'AERO';
     const aeroAmt = (typeof p.rewardAmount === 'number') ? p.rewardAmount : 0;
     const aeroUsd = (typeof p.rewardUsd === 'number') ? p.rewardUsd : 0;
@@ -3333,10 +3336,11 @@ function plRenderPositions(data) {
     else if (s1 === 'USDC' || s1 === 'USDBC') curUsd = p.token1.amount + p.token0.amount * p.currentPrice;
     else curUsd = 0; // non-USDC pool, butuh price source eksternal — biarkan 0 sebagai sinyal
 
-    // Fees USD (gauge auto-collect biasanya bikin 0 di SlipStream)
+    // Fees USD (Solidly-style: trading fees → voters, bukan LP. Untuk staked SlipStream, paksa 0)
     let feesUsd = 0;
     if (s0 === 'USDC' || s0 === 'USDBC') feesUsd = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0);
     else if (s1 === 'USDC' || s1 === 'USDBC') feesUsd = p.token1.fees + p.token0.fees * p.currentPrice;
+    if (p.source === 'staked' && (p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || ''))) feesUsd = 0;
 
     // Reward (AERO di Base, VELO di OP) — pakai server-side price kalau ada
     const rewardSymbol = p.rewardSymbol || 'AERO';
@@ -3419,6 +3423,7 @@ function plRenderPositions(data) {
       let curU = 0, feU = 0;
       if (s0 === 'USDC' || s0 === 'USDBC') { curU = p.token0.amount + (p.currentPrice ? p.token1.amount / p.currentPrice : 0); feU = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0); }
       else if (s1 === 'USDC' || s1 === 'USDBC') { curU = p.token1.amount + p.token0.amount * p.currentPrice; feU = p.token1.fees + p.token0.fees * p.currentPrice; }
+      if (p.source === 'staked' && (p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || ''))) feU = 0;
       totalCur += curU;
       totalFees += feU;
       if (typeof p.aeroEarned === 'number') totalAero += p.aeroEarned * aeroPriceUsd;
