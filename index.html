@@ -3246,7 +3246,7 @@ function plRenderHistory() {
       <tr style="border-bottom:1px solid #1f2638">
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}${e.lastRefreshed ? `<br><span style="font-size:9px; color:#38bdf8">↻ ${plFormatAge(Math.floor(e.lastRefreshed/1000))} lalu</span>` : ''}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-weight:600">${e.pair || '—'} ${e.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 5px; border-radius:3px">OP</span>' : e.chain === 'arbitrum' ? '<span style="color:#60a5fa; font-size:9px; background:#0a1027; padding:1px 5px; border-radius:3px">ARB</span>' : e.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 5px; border-radius:3px">BASE</span>' : ''}<br><span style="font-size:10px; color:#6b7280">#${e.tokenId} · ${poolShort}</span></td>
-        <td style="padding:10px 8px; font-size:11px; color:${e.source === 'staked' ? '#a78bfa' : (e.source && e.source.startsWith('masterchef')) ? '#fbbf24' : '#94a3b8'}; white-space:nowrap">${e.source === 'staked' ? '🏦 Gauge' : (e.source && e.source.startsWith('masterchef')) ? '🥞 MasterChef' : '👛 Wallet'}<br><span style="color:${e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${e.inRange ? '● IN' : '● OUT'}</span></td>
+        <td style="padding:10px 8px; font-size:11px; color:${e.source === 'closed-tx' ? '#6b7280' : e.source === 'staked' ? '#a78bfa' : (e.source && e.source.startsWith('masterchef')) ? '#fbbf24' : '#94a3b8'}; white-space:nowrap">${e.source === 'closed-tx' ? '🔒 Closed' : e.source === 'staked' ? '🏦 Gauge' : (e.source && e.source.startsWith('masterchef')) ? '🥞 MasterChef' : '👛 Wallet'}<br><span style="color:${e.source === 'closed-tx' ? '#6b7280' : e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${e.source === 'closed-tx' ? '● EXITED' : e.inRange ? '● IN' : '● OUT'}</span></td>
         <td style="padding:10px 8px; font-size:12px; color:#fbbf24; font-family:monospace; text-align:right">${typeof e.modal === 'number' ? '$'+e.modal.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-family:monospace; text-align:right">${typeof e.curUsd === 'number' ? '$'+e.curUsd.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:${cPool}; font-family:monospace; text-align:right">${sgn(poolPnl)}$${poolPnl.toFixed(2)}</td>
@@ -3362,34 +3362,51 @@ function plTxRenderResults(data) {
   }).join('');
   // Token flows display
   let flowsHtml = '';
+  let totalInUsd = 0, totalOutUsd = 0;
   if (data.tokenFlows && data.tokenFlows.length) {
     const flowRows = data.tokenFlows
       .filter(f => f.amountIn > 0 || f.amountOut > 0)
       .map(f => {
-        const inStr = f.amountIn > 0 ? `<span style="color:#6ee7b7">+${f.amountIn.toFixed(6)}</span>` : '0';
-        const outStr = f.amountOut > 0 ? `<span style="color:#f87171">-${f.amountOut.toFixed(6)}</span>` : '0';
+        const inStr = f.amountIn > 0 ? `<span style="color:#6ee7b7">+${f.amountIn.toFixed(6)}</span>` : '—';
+        const outStr = f.amountOut > 0 ? `<span style="color:#f87171">-${f.amountOut.toFixed(6)}</span>` : '—';
         const netColor = f.net >= 0 ? '#6ee7b7' : '#f87171';
         const netSign = f.net >= 0 ? '+' : '';
+        const priceStr = (typeof f.priceUsd === 'number') ? `$${f.priceUsd.toFixed(4)}` : '<span style="color:#6b7280">n/a</span>';
+        const valIn = (typeof f.valueIn === 'number') ? `$${f.valueIn.toFixed(2)}` : '—';
+        const valOut = (typeof f.valueOut === 'number') ? `$${f.valueOut.toFixed(2)}` : '—';
+        const valNet = (typeof f.valueNet === 'number') ? `${netSign}$${f.valueNet.toFixed(2)}` : '—';
+        if (typeof f.valueIn === 'number') totalInUsd += f.valueIn;
+        if (typeof f.valueOut === 'number') totalOutUsd += f.valueOut;
         return `<tr style="border-bottom:1px solid #1f2638">
           <td style="padding:6px; font-family:monospace; color:#d0d8e0; font-weight:600">${f.symbol}</td>
-          <td style="padding:6px; font-family:monospace; font-size:10px; color:#6b7280">${f.address.slice(0,8)}...${f.address.slice(-4)}</td>
-          <td style="padding:6px; font-family:monospace; text-align:right">${inStr}</td>
-          <td style="padding:6px; font-family:monospace; text-align:right">${outStr}</td>
-          <td style="padding:6px; font-family:monospace; text-align:right; color:${netColor}; font-weight:700">${netSign}${f.net.toFixed(6)}</td>
+          <td style="padding:6px; font-family:monospace; text-align:right">${inStr}<br><span style="color:#94a3b8; font-size:10px">${valIn}</span></td>
+          <td style="padding:6px; font-family:monospace; text-align:right">${outStr}<br><span style="color:#94a3b8; font-size:10px">${valOut}</span></td>
+          <td style="padding:6px; font-family:monospace; text-align:right; color:${netColor}; font-weight:700">${netSign}${f.net.toFixed(6)}<br><span style="font-size:10px; font-weight:400">${valNet}</span></td>
+          <td style="padding:6px; font-family:monospace; text-align:right; color:#9ca3af; font-size:10px">${priceStr}</td>
         </tr>`;
       }).join('');
-    flowsHtml = `<div style="margin-top:12px; background:#0d1219; padding:10px; border-radius:6px">
+    const totalNet = totalInUsd - totalOutUsd;
+    const totalColor = totalNet >= 0 ? '#6ee7b7' : '#f87171';
+    flowsHtml = `<div style="margin-top:12px; background:#0d1219; padding:12px; border-radius:6px">
       <div style="font-size:11px; color:#a78bfa; font-weight:600; margin-bottom:6px">💸 Token Flows (wallet user, di tx ini)</div>
       <table style="width:100%; border-collapse:collapse; font-size:11px">
         <thead><tr style="color:#9ca3af; font-size:9px">
           <th style="padding:4px; text-align:left">Symbol</th>
-          <th style="padding:4px; text-align:left">Address</th>
-          <th style="padding:4px; text-align:right">Diterima</th>
-          <th style="padding:4px; text-align:right">Dikirim</th>
+          <th style="padding:4px; text-align:right">Diterima (USD)</th>
+          <th style="padding:4px; text-align:right">Dikirim (USD)</th>
           <th style="padding:4px; text-align:right">NET</th>
+          <th style="padding:4px; text-align:right">Price</th>
         </tr></thead>
         <tbody>${flowRows}</tbody>
       </table>
+      <div style="margin-top:8px; padding:8px; background:#131826; border-radius:4px; display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; font-family:monospace; font-size:11px">
+        <div><span style="color:#9ca3af">Total Diterima:</span> <span style="color:#6ee7b7; font-weight:700">$${totalInUsd.toFixed(2)}</span></div>
+        <div><span style="color:#9ca3af">Total Dikirim:</span> <span style="color:#f87171; font-weight:700">$${totalOutUsd.toFixed(2)}</span></div>
+        <div><span style="color:#9ca3af">NET:</span> <span style="color:${totalColor}; font-weight:700">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(2)}</span></div>
+      </div>
+      <div style="margin-top:10px; text-align:right">
+        <button onclick='plSaveClosed(${JSON.stringify({txHash:data.txHash, chain:data.chain, blockNumber:data.blockNumber, tokenFlows:data.tokenFlows, totalInUsd, totalOutUsd, tokenIds:data.tokenIds.map(t=>t.tokenId)}).replace(/'/g,"&apos;")})' style="background:#fbbf24; color:#1f1408; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px">💾 Save as Closed Position (assume close tx)</button>
+      </div>
     </div>`;
   }
 
@@ -3405,6 +3422,69 @@ function plTxRenderResults(data) {
     </table></div>
     ${flowsHtml}
     <div style="margin-top:8px; font-size:10px; color:#6b7280">💡 Klik <b>↑ Pakai TokenId</b> untuk lookup posisi (kalau NFT masih ada). Token Flows = berapa kamu terima/kirim di tx ini — pakai ini untuk hitung exit value (close) atau modal (open) manual.</div>`;
+}
+
+function plSaveClosed(snap) {
+  // Prompt user for modal entry + pair name (since close tx alone gak nampilin modal)
+  const tokenId = (snap.tokenIds || [])[0] || '';
+  const flows = snap.tokenFlows || [];
+  const rewardFlow = flows.find(f => /CAKE|VELO|AERO/i.test(f.symbol || ''));
+  const exitFlow = flows.filter(f => !/CAKE|VELO|AERO/i.test(f.symbol || ''));
+  const exitUsd = exitFlow.reduce((s, f) => s + (f.valueIn || 0), 0);
+  const rewardUsd = rewardFlow ? (rewardFlow.valueIn || 0) : 0;
+  const rewardAmt = rewardFlow ? (rewardFlow.amountIn || 0) : 0;
+  const rewardSym = rewardFlow ? rewardFlow.symbol : null;
+
+  // Auto-detect pair from non-reward flows (top 2 tokens by value)
+  const pairTokens = exitFlow.sort((a, b) => (b.valueIn || 0) - (a.valueIn || 0)).slice(0, 2).map(f => f.symbol);
+  const pairAuto = pairTokens.length === 2 ? pairTokens.join('/') : (pairTokens[0] || '?/?');
+
+  const pair = prompt(`Pair name?\n(auto-detect: ${pairAuto})`, pairAuto);
+  if (pair === null) return;
+  const modalStr = prompt(`Modal pas masuk pool (USD)?\nKalau lupa & ada tx open hash, hash itu di-Extract dulu untuk lihat "Dikirim" USDC = modal.\n\nKosongin = $0 (cuma reward, gak ada modal tercatat).`, '');
+  if (modalStr === null) return;
+  const modal = parseFloat(modalStr) || 0;
+  const hedgeStr = prompt(`Hedge PnL di GMX ($, bisa minus)?`, '0');
+  if (hedgeStr === null) return;
+  const hedge = parseFloat(hedgeStr) || 0;
+  const poolAddr = prompt(`Pool address (opsional, untuk reference)?`, '');
+
+  const pnlUsd = (exitUsd + rewardUsd) - modal;
+  const pnlPct = modal ? (pnlUsd / modal * 100) : 0;
+
+  const entry = {
+    tokenId: String(tokenId),
+    pair,
+    poolAddress: (poolAddr || '').trim() || null,
+    chain: snap.chain,
+    npmName: 'PancakeSwap V3 (closed)',
+    source: 'closed-tx',
+    modal,
+    curUsd: exitUsd, // exit value (what user got back as USDC + leftover token)
+    feesUsd: 0,
+    aeroAmt: rewardAmt,
+    aeroUsd: rewardUsd,
+    rewardSymbol: rewardSym,
+    pnlUsd,
+    pnlPct,
+    hedgePnl: hedge,
+    mintBlock: null,
+    mintTimestamp: null, // unknown without open tx
+    inRange: false, // closed
+    closeTxHash: snap.txHash,
+    closeBlock: snap.blockNumber,
+    closedAt: Math.floor(Date.now() / 1000),
+    addedAt: Date.now()
+  };
+
+  const arr = plLoadHistory();
+  arr.unshift(entry);
+  plSaveHistory(arr);
+  plRenderHistory();
+  plTxSetStatus(`✓ Closed position NFT #${tokenId} (${pair}) saved. Modal $${modal.toFixed(2)}, Exit $${exitUsd.toFixed(2)}, Reward ${rewardSym ? `$${rewardUsd.toFixed(2)} ${rewardSym}` : '—'}, NET ${pnlUsd >= 0 ? '+' : ''}$${(pnlUsd + hedge).toFixed(2)}`, 'ok');
+  setTimeout(() => plTxSetStatus(''), 8000);
+  // Scroll to history
+  document.getElementById('pl_history')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function plTxUseTokenId(tokenId, tokensCsv) {

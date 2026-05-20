@@ -1028,8 +1028,9 @@ module.exports = async function handler(req, res) {
             if (fromAddr === userAddr) tokenFlows[tokenAddr].amountOut += amount;
           }
         }
-        // Enrich each token flow with symbol/decimals + human amounts
+        // Enrich each token flow with symbol/decimals + human amounts + USD price
         const flows = [];
+        const platform = CHAINS[actualChain].coingeckoPlatform;
         for (const [tokenAddr, flow] of Object.entries(tokenFlows)) {
           let info = { symbol: '?', decimals: 18 };
           try {
@@ -1039,13 +1040,25 @@ module.exports = async function handler(req, res) {
           const inHuman = Number(flow.amountIn) / Math.pow(10, dec);
           const outHuman = Number(flow.amountOut) / Math.pow(10, dec);
           const net = inHuman - outHuman;
+          // Price USD: USDC/USDbC = 1, else lookup CoinGecko by contract
+          const sym = (info.symbol || '').toUpperCase();
+          let priceUsd = null;
+          if (sym === 'USDC' || sym === 'USDBC' || sym === 'USDT' || sym === 'DAI') priceUsd = 1;
+          else priceUsd = await fetchPriceByContract(platform, tokenAddr);
+          const valueIn = (typeof priceUsd === 'number') ? inHuman * priceUsd : null;
+          const valueOut = (typeof priceUsd === 'number') ? outHuman * priceUsd : null;
+          const valueNet = (typeof priceUsd === 'number') ? net * priceUsd : null;
           flows.push({
             address: tokenAddr,
             symbol: info.symbol,
             decimals: dec,
             amountIn: inHuman,
             amountOut: outHuman,
-            net
+            net,
+            priceUsd,
+            valueIn,
+            valueOut,
+            valueNet
           });
         }
 
