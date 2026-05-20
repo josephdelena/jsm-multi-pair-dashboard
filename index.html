@@ -1139,6 +1139,18 @@
     <!-- STATUS / RESULTS -->
     <div id="pl_status" style="display:none; background:#131826; border:1px solid #1f2638; border-radius:8px; padding:14px; margin-bottom:14px; font-size:12px"></div>
     <div id="pl_results"></div>
+
+    <!-- HISTORY SECTION -->
+    <div style="margin-top:24px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+        <div style="font-size:13px; color:#a78bfa; font-weight:700; letter-spacing:0.08em; text-transform:uppercase">📜 Position History</div>
+        <div style="display:flex; gap:8px">
+          <button onclick="plExportHistory()" style="background:#1f2638; color:#94a3b8; border:1px solid #2a3548; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:11px">📥 Export JSON</button>
+          <button onclick="plClearHistory()" style="background:#1a0a0a; color:#f87171; border:1px solid #7f1d1d; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:11px">🗑 Clear All</button>
+        </div>
+      </div>
+      <div id="pl_history"></div>
+    </div>
   </div><!-- /tab-poollookup -->
 
 </div><!-- /container -->
@@ -2932,6 +2944,131 @@ function plInit() {
   if (wf && !wf.value) wf.value = w;
   if (pf && !pf.value) pf.value = lastPool;
   if (gf && !gf.value) gf.value = lastGauge;
+  plRenderHistory();
+}
+
+// ── History storage (localStorage) ──
+function plLoadHistory() {
+  try { return JSON.parse(localStorage.getItem('jsm-pool-history') || '[]'); }
+  catch { return []; }
+}
+
+function plSaveHistory(arr) {
+  localStorage.setItem('jsm-pool-history', JSON.stringify(arr));
+}
+
+function plAddToHistory(snap) {
+  const arr = plLoadHistory();
+  // Dedupe: same tokenId + same minute = skip
+  const nowMin = Math.floor(Date.now() / 60000);
+  const dup = arr.find(e => e.tokenId === snap.tokenId && Math.floor(e.addedAt / 60000) === nowMin);
+  if (dup) {
+    plSetStatus(`⚠ Snapshot NFT #${snap.tokenId} baru aja ditambah, skip.`, 'warn');
+    return;
+  }
+  arr.unshift({ ...snap, addedAt: Date.now() });
+  plSaveHistory(arr);
+  plRenderHistory();
+  plSetStatus(`✓ Snapshot NFT #${snap.tokenId} masuk ke History.`, 'ok');
+  setTimeout(() => plSetStatus(''), 3000);
+}
+
+function plDeleteHistoryEntry(addedAt) {
+  if (!confirm('Hapus entry ini dari history?')) return;
+  const arr = plLoadHistory().filter(e => e.addedAt !== addedAt);
+  plSaveHistory(arr);
+  plRenderHistory();
+}
+
+function plClearHistory() {
+  if (!confirm('Hapus SEMUA history? Gak bisa di-undo.')) return;
+  plSaveHistory([]);
+  plRenderHistory();
+}
+
+function plExportHistory() {
+  const arr = plLoadHistory();
+  if (!arr.length) { alert('History kosong.'); return; }
+  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `jsm-pool-history-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function plFmtDate(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function plRenderHistory() {
+  const el = document.getElementById('pl_history');
+  if (!el) return;
+  const arr = plLoadHistory();
+  if (!arr.length) {
+    el.innerHTML = `<div style="background:#0d1219; border:1px dashed #1f2638; border-radius:6px; padding:20px; text-align:center; color:#6b7280; font-size:12px">Belum ada history. Klik "+ Tambah ke History" di hasil cari untuk record snapshot.</div>`;
+    return;
+  }
+  // Aggregate summary
+  let totModal = 0, totPnl = 0;
+  for (const e of arr) {
+    if (typeof e.modal === 'number') totModal += e.modal;
+    if (typeof e.pnlUsd === 'number') totPnl += e.pnlUsd;
+  }
+  const totColor = totPnl >= 0 ? '#6ee7b7' : '#f87171';
+  const totSign = totPnl >= 0 ? '+' : '';
+
+  const rows = arr.map(e => {
+    const c = (typeof e.pnlUsd === 'number' && e.pnlUsd >= 0) ? '#6ee7b7' : '#f87171';
+    const sgn = (typeof e.pnlUsd === 'number' && e.pnlUsd >= 0) ? '+' : '';
+    const ageStr = e.mintTimestamp ? plFormatAge(e.mintTimestamp) : '—';
+    const poolShort = e.poolAddress ? e.poolAddress.slice(0,6)+'...'+e.poolAddress.slice(-4) : '—';
+    return `
+      <tr style="border-bottom:1px solid #1f2638">
+        <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}</td>
+        <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-weight:600">${e.pair || '—'}<br><span style="font-size:10px; color:#6b7280">#${e.tokenId} · ${poolShort}</span></td>
+        <td style="padding:10px 8px; font-size:11px; color:${e.source === 'staked' ? '#a78bfa' : '#94a3b8'}; white-space:nowrap">${e.source === 'staked' ? '🏦 Staked' : '👛 Wallet'}<br><span style="color:${e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${e.inRange ? '● IN' : '● OUT'}</span></td>
+        <td style="padding:10px 8px; font-size:12px; color:#fbbf24; font-family:monospace; text-align:right">${typeof e.modal === 'number' ? '$'+e.modal.toFixed(2) : '—'}</td>
+        <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-family:monospace; text-align:right">${typeof e.curUsd === 'number' ? '$'+e.curUsd.toFixed(2) : '—'}</td>
+        <td style="padding:10px 8px; font-size:12px; color:${c}; font-family:monospace; text-align:right; font-weight:700">${typeof e.pnlUsd === 'number' ? sgn+'$'+e.pnlUsd.toFixed(2) : '—'}<br><span style="font-size:10px; font-weight:400">${typeof e.pnlPct === 'number' ? sgn+e.pnlPct.toFixed(2)+'%' : ''}</span></td>
+        <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' AERO' : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
+        <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${ageStr}</td>
+        <td style="padding:10px 8px; text-align:center">
+          <button onclick="plDeleteHistoryEntry(${e.addedAt})" style="background:transparent; color:#f87171; border:1px solid #7f1d1d; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:10px">🗑</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; overflow:hidden">
+      <div style="background:#0d1219; padding:10px 14px; display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638">
+        <div><div style="font-size:10px; color:#9ca3af">Total Entries</div><div style="font-size:16px; color:#d0d8e0; font-weight:700">${arr.length}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Total Modal (sum)</div><div style="font-size:16px; color:#fbbf24; font-weight:700">$${totModal.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Total PnL (sum)</div><div style="font-size:16px; color:${totColor}; font-weight:700">${totSign}$${totPnl.toFixed(2)}</div></div>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%; border-collapse:collapse; font-family:'Inter', sans-serif">
+          <thead style="background:#0d1219">
+            <tr>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Dicatat</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Pair / NFT / Pool</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Status</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Modal</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Value</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">PnL</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">AERO</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Umur Posisi</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:center">⋯</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 // Format umur dari unix timestamp jadi "3 jam 12 menit" / "2 hari 5 jam" / "47 menit"
@@ -3065,14 +3202,17 @@ function plRenderPositions(data) {
 
     return `
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; padding:18px; margin-bottom:14px">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; gap:12px">
         <div>
           <div style="font-size:13px; font-weight:700; color:#d0d8e0">NFT #${p.tokenId} — ${p.token0.symbol}/${p.token1.symbol}</div>
           <div style="font-size:10px; color:#6b7280; margin-top:2px">${p.npmName || ''} · ${rangeBadge} · ${p.source === 'staked' ? '<span style="color:#a78bfa">🏦 Staked di gauge</span>' : '<span style="color:#94a3b8">👛 Di wallet</span>'}</div>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
-          <div style="font-family:monospace; font-size:13px; color:#d0d8e0">${p.currentPrice ? p.currentPrice.toFixed(p.currentPrice < 1 ? 6 : 4) : '—'}</div>
+        <div style="display:flex; align-items:center; gap:14px">
+          <div style="text-align:right">
+            <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
+            <div style="font-family:monospace; font-size:13px; color:#d0d8e0">${p.currentPrice ? p.currentPrice.toFixed(p.currentPrice < 1 ? 6 : 4) : '—'}</div>
+          </div>
+          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
         </div>
       </div>
 
