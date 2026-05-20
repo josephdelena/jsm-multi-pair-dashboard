@@ -969,7 +969,7 @@ module.exports = async function handler(req, res) {
         const known = (cfg.knownDexContracts || []).map(a => a.toLowerCase());
         const candidates = txs
           .filter(t => parseInt(t.timeStamp) >= cutoffTs)
-          .filter(t => known.includes((t.to || '').toLowerCase()))
+          .filter(t => t.to && t.to !== '') // skip contract creation
           .map(t => ({
             hash: t.hash,
             timeStamp: parseInt(t.timeStamp),
@@ -978,9 +978,10 @@ module.exports = async function handler(req, res) {
             methodId: t.methodId || (t.input || '').slice(0, 10),
             functionName: t.functionName || '',
             value: t.value,
-            isError: t.isError === '1'
+            isError: t.isError === '1',
+            isKnownDex: known.includes((t.to || '').toLowerCase())
           }))
-          .slice(0, 25);
+          .slice(0, 50);
         return res.status(200).json({ ok: true, mode: 'findClosed', chain: chainKey, walletAddress, lookbackDays: days, candidates });
       } catch (e) {
         return res.status(500).json({ error: 'findClosed failed', detail: e.message });

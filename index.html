@@ -3341,19 +3341,25 @@ function plScanRenderCandidates(data) {
     return `${m} menit`;
   };
   const scanBase = data.chain === 'optimism' ? 'optimistic.etherscan.io' : data.chain === 'arbitrum' ? 'arbiscan.io' : 'basescan.org';
-  const rows = data.candidates.map(c => {
+  // Sort: known DEX first, then by timestamp desc
+  const sorted = [...data.candidates].sort((a, b) => {
+    if (a.isKnownDex !== b.isKnownDex) return a.isKnownDex ? -1 : 1;
+    return b.timeStamp - a.timeStamp;
+  });
+  const rows = sorted.map(c => {
     const shortHash = c.hash.slice(0, 10) + '...' + c.hash.slice(-6);
     const shortTo = c.to.slice(0, 8) + '...' + c.to.slice(-4);
-    const fn = (c.functionName || c.methodId || '—').split('(')[0].slice(0, 30);
+    const fn = (c.functionName || c.methodId || '—').split('(')[0].slice(0, 35);
+    const dexBadge = c.isKnownDex ? '<span style="color:#6ee7b7; font-size:9px; background:#064e3b; padding:1px 5px; border-radius:3px; margin-right:4px">DEX</span>' : '';
     return `
-      <tr style="border-bottom:1px solid #1f2638; ${c.isError ? 'opacity:0.5' : ''}">
+      <tr style="border-bottom:1px solid #1f2638; ${c.isError ? 'opacity:0.4' : ''} ${c.isKnownDex ? 'background:#0a1f1a' : ''}">
         <td style="padding:8px; font-size:11px; color:#9ca3af; white-space:nowrap">${fmtTs(c.timeStamp)}<br><span style="font-size:9px; color:#6b7280">${fmtAge(c.timeStamp)} lalu</span></td>
-        <td style="padding:8px; font-size:11px; color:#d0d8e0; font-family:monospace">${shortHash}</td>
+        <td style="padding:8px; font-size:11px; color:#d0d8e0; font-family:monospace">${dexBadge}${shortHash}</td>
         <td style="padding:8px; font-size:11px; color:#a78bfa; font-family:monospace">${fn}${c.isError ? ' <span style="color:#f87171">FAIL</span>' : ''}</td>
         <td style="padding:8px; font-size:11px; color:#9ca3af; font-family:monospace">${shortTo}</td>
-        <td style="padding:8px; text-align:right">
+        <td style="padding:8px; text-align:right; white-space:nowrap">
           <a href="https://${scanBase}/tx/${c.hash}" target="_blank" style="color:#38bdf8; text-decoration:none; font-size:11px; margin-right:8px">↗ Open</a>
-          <button onclick="navigator.clipboard.writeText('${c.hash}').then(()=>alert('Tx hash di-copy'))" style="background:transparent; color:#94a3b8; border:1px solid #2a3548; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:10px">📋 Copy hash</button>
+          <button onclick="navigator.clipboard.writeText('${c.hash}').then(()=>alert('Tx hash di-copy'))" style="background:transparent; color:#94a3b8; border:1px solid #2a3548; padding:3px 8px; border-radius:3px; cursor:pointer; font-size:10px">📋 Copy</button>
         </td>
       </tr>`;
   }).join('');
