@@ -954,15 +954,25 @@ module.exports = async function handler(req, res) {
         return res.status(400).json({ error: 'parseTx requires: txHash (0x...64 hex)' });
       }
       try {
-        const receipt = await rpcCall('eth_getTransactionReceipt', [txHash]);
-        if (!receipt || !receipt.logs) return res.status(404).json({ error: 'Tx receipt gak ketemu / belum confirmed' });
+        let receipt = await rpcCall('eth_getTransactionReceipt', [txHash]);
+        let actualChain = chainKey;
+        // Auto-fallback: kalau gak ketemu di chain selected, coba chain lain
+        if (!receipt) {
+          for (const otherChain of Object.keys(CHAINS)) {
+            if (otherChain === chainKey) continue;
+            const r = await chainCtx.run({ chainKey: otherChain }, async () => await rpcCall('eth_getTransactionReceipt', [txHash]));
+            if (r) { receipt = r; actualChain = otherChain; break; }
+          }
+        }
+        if (!receipt || !receipt.logs) return res.status(404).json({ error: 'Tx receipt gak ketemu di Base/OP/Arbitrum — cek tx hash + chain' });
         const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
         const INCREASE_TOPIC = '0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f';
         const DECREASE_TOPIC = '0x26f6a048ee9138f2c0ce266f322cb99228e8d619ae2bff30c67f8dcf9d2377b4';
         const COLLECT_TOPIC  = '0x40d0efd1a53d60ecbf40971b9daf7dc90178c3aadc7aab1765632738fa8b8f01';
 
-        const npmAddrs = getNpms().map(n => n.address.toLowerCase());
-        const npmByAddr = Object.fromEntries(getNpms().map(n => [n.address.toLowerCase(), n]));
+        // Pakai NPMs dari chain yang sebenarnya (post-fallback)
+        const npmAddrs = CHAINS[actualChain].npms.map(n => n.address.toLowerCase());
+        const npmByAddr = Object.fromEntries(CHAINS[actualChain].npms.map(n => [n.address.toLowerCase(), n]));
 
         const tokenIdSet = new Set();
         const eventsByTokenId = {};
@@ -1000,7 +1010,10 @@ module.exports = async function handler(req, res) {
           const npmHit = evs.find(e => e.npm)?.npm;
           let posInfo = null, err = null;
           if (npmHit) {
-            try { posInfo = await readPosition(npmHit, tid); } catch (e) { err = e.message; }
+            try {
+              // Pakai chain yg sesuai untuk read position
+              posInfo = await chainCtx.run({ chainKey: actualChain }, async () => readPosition(npmHit, tid));
+            } catch (e) { err = e.message; }
           }
           results.push({
             tokenId: tid,
@@ -1015,7 +1028,7 @@ module.exports = async function handler(req, res) {
             positionError: err
           });
         }
-        return res.status(200).json({ ok: true, mode: 'parseTx', chain: chainKey, txHash, blockNumber: parseInt(receipt.blockNumber, 16), tokenIds: results });
+        return res.status(200).json({ ok: true, mode: 'parseTx', chain: actualChain, requestedChain: chainKey, txHash, blockNumber: parseInt(receipt.blockNumber, 16), tokenIds: results });
       } catch (e) {
         return res.status(500).json({ error: 'parseTx failed', detail: e.message });
       }

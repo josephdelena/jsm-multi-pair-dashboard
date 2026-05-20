@@ -3327,7 +3327,8 @@ async function plParseTx() {
       plTxSetStatus('ℹ️ Gak ada NFT LP event di tx ini (Transfer/Increase/Decrease/Collect). Mungkin bukan tx terkait posisi LP.', 'warn');
       return;
     }
-    plTxSetStatus(`✓ Ketemu ${data.tokenIds.length} tokenId(s) di tx ini`, 'ok');
+    const chainMsg = (data.chain !== data.requestedChain) ? ` <span style="color:#fbbf24">(tx ada di ${data.chain}, bukan ${data.requestedChain} — auto-redirect)</span>` : '';
+    plTxSetStatus(`✓ Ketemu ${data.tokenIds.length} tokenId(s) di tx ini${chainMsg}`, 'ok');
     plTxRenderResults(data);
   } catch (e) {
     plTxSetStatus(`❌ Network error: ${e.message}`, 'err');
