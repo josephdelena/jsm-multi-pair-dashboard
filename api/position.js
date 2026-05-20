@@ -668,23 +668,33 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
     for (const tid of manualTokenIds) {
       const tokenId = String(tid).trim();
       if (!tokenId || !/^\d+$/.test(tokenId)) continue;
-      let foundNpm = null, ownerAddr = null;
+      // TokenId counter beda per NPM contract — cek SEMUA NPM, jangan break first.
+      // tryMatch akan filter mana yg sesuai pool (token0/token1/fee match).
+      const foundInNpms = [];
       for (const npm of getNpms()) {
         try {
           const r = await ethCall(npm.address, '0x6352211e' + pad(toHex(tokenId)));
-          ownerAddr = ('0x' + r.replace('0x','').slice(-40)).toLowerCase();
-          if (ownerAddr && !/^0x0+$/.test(ownerAddr.replace('0x',''))) { foundNpm = npm; break; }
+          const ownerAddr = ('0x' + r.replace('0x','').slice(-40)).toLowerCase();
+          if (ownerAddr && !/^0x0+$/.test(ownerAddr.replace('0x',''))) {
+            foundInNpms.push({ npm, ownerAddr });
+          }
         } catch { /* not in this NPM, try next */ }
       }
-      if (!foundNpm) { diag.manualTokenIds.push({ tokenId, error: 'tokenId gak ditemukan di NPM manapun di chain ini' }); continue; }
-      let source = 'manual';
+      if (!foundInNpms.length) {
+        diag.manualTokenIds.push({ tokenId, error: 'tokenId gak ditemukan di NPM manapun di chain ini' });
+        continue;
+      }
+      // Untuk setiap NPM yg punya tokenId itu, coba match pool. Yang match akan masuk results.
       const masterchefs = getMasterchefs();
-      const isMasterchef = masterchefs.find(mc => mc.address.toLowerCase() === ownerAddr);
-      if (isMasterchef) source = 'masterchef:' + isMasterchef.name.split(' ')[0];
-      else if (ownerAddr === walletAddress.toLowerCase()) source = 'wallet';
-      else source = 'manual(owner:' + ownerAddr.slice(0,6) + '...' + ownerAddr.slice(-4) + ')';
-      diag.manualTokenIds.push({ tokenId, npm: foundNpm.name, owner: ownerAddr, source });
-      await tryMatch(foundNpm, tokenId, source);
+      for (const { npm, ownerAddr } of foundInNpms) {
+        let source = 'manual';
+        const isMasterchef = masterchefs.find(mc => mc.address.toLowerCase() === ownerAddr);
+        if (isMasterchef) source = 'masterchef:' + isMasterchef.name.split(' ')[0];
+        else if (ownerAddr === walletAddress.toLowerCase()) source = 'wallet';
+        else source = 'manual(owner:' + ownerAddr.slice(0,6) + '...' + ownerAddr.slice(-4) + ')';
+        diag.manualTokenIds.push({ tokenId, npm: npm.name, owner: ownerAddr, source });
+        await tryMatch(npm, tokenId, source);
+      }
     }
     // FAST PATH: user kasih tokenId eksplisit, skip enumeration mahal (balanceOf/MasterChef scan/gauge)
     return { results, diag };
