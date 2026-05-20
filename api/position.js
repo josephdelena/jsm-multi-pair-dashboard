@@ -111,7 +111,8 @@ function getMasterchefs() {
 }
 
 // ── Scan NPM Transfer events FROM wallet TO target (mis. masterchef) ──
-// Returns array of tokenIds. Chunked scan (max 10 chunks × 18k blocks ≈ 4 hari di Base).
+// Pakai chunk besar (500k blok) karena filter sempit (3 topics) — result count kecil, payload aman.
+// Cover ~6M blok ≈ 4 bulan di Base. Halve chunk kalau RPC reject.
 async function scanTransfersFromWalletTo(npmAddress, fromWallet, toAddress) {
   const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
   const fromTopic = '0x' + pad(fromWallet.replace('0x','').toLowerCase());
@@ -119,13 +120,16 @@ async function scanTransfersFromWalletTo(npmAddress, fromWallet, toAddress) {
 
   const latestHex = await rpcCall('eth_blockNumber', []);
   const latest = parseInt(latestHex, 16);
-  const CHUNK = 18000;
-  const MAX_CHUNKS = 10;
   const tokenIds = new Set();
 
-  for (let c = 0; c < MAX_CHUNKS; c++) {
-    const toBlk = latest - (c * CHUNK);
-    const fromBlk = Math.max(0, toBlk - CHUNK + 1);
+  let cursor = latest;
+  let chunkSize = 500_000;
+  const MIN_CHUNK = 25_000;
+  const FLOOR_BLOCK = Math.max(0, latest - 6_000_000); // batas ~4 bulan di Base
+
+  while (cursor > FLOOR_BLOCK) {
+    const toBlk = cursor;
+    const fromBlk = Math.max(FLOOR_BLOCK, cursor - chunkSize + 1);
     try {
       const logs = await rpcCall('eth_getLogs', [{
         address: npmAddress,
@@ -135,12 +139,19 @@ async function scanTransfersFromWalletTo(npmAddress, fromWallet, toAddress) {
       }]);
       if (logs && logs.length) {
         for (const log of logs) {
-          // Transfer event: topics[3] = tokenId (indexed)
           if (log.topics[3]) tokenIds.add(BigInt(log.topics[3]).toString());
         }
       }
-    } catch {}
-    if (fromBlk === 0) break;
+      cursor = fromBlk - 1;
+    } catch (e) {
+      // RPC reject (mungkin range too wide untuk RPC ini) — halve chunk dan retry block range yg sama
+      if (chunkSize > MIN_CHUNK) {
+        chunkSize = Math.max(MIN_CHUNK, Math.floor(chunkSize / 2));
+        continue;
+      }
+      // Udah minimum tapi masih error — skip range ini
+      cursor = fromBlk - 1;
+    }
   }
   return Array.from(tokenIds);
 }
