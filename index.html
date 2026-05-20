@@ -2966,11 +2966,30 @@ function plAddToHistory(snap) {
     plSetStatus(`⚠ Snapshot NFT #${snap.tokenId} baru aja ditambah, skip.`, 'warn');
     return;
   }
-  arr.unshift({ ...snap, addedAt: Date.now() });
+  // Prompt Hedge PnL (opsional). Bisa minus (loss), kosongin = 0.
+  const hedgeRaw = prompt(`Hedge PnL di GMX untuk NFT #${snap.tokenId} ($).\n\nContoh: -3.5 (kalau loss $3.5), 7.2 (kalau profit $7.2), atau kosongin = 0.\n\nBisa edit nanti kapan aja.`, '0');
+  if (hedgeRaw === null) return; // user cancel
+  const hedgePnl = parseFloat(hedgeRaw);
+  const finalHedge = isNaN(hedgePnl) ? 0 : hedgePnl;
+  arr.unshift({ ...snap, hedgePnl: finalHedge, addedAt: Date.now() });
   plSaveHistory(arr);
   plRenderHistory();
-  plSetStatus(`✓ Snapshot NFT #${snap.tokenId} masuk ke History.`, 'ok');
-  setTimeout(() => plSetStatus(''), 3000);
+  plSetStatus(`✓ Snapshot NFT #${snap.tokenId} masuk ke History (Pool PnL ${snap.pnlUsd>=0?'+':''}$${(snap.pnlUsd||0).toFixed(2)}, Hedge ${finalHedge>=0?'+':''}$${finalHedge.toFixed(2)}, Net ${(snap.pnlUsd+finalHedge)>=0?'+':''}$${((snap.pnlUsd||0)+finalHedge).toFixed(2)})`, 'ok');
+  setTimeout(() => plSetStatus(''), 5000);
+}
+
+function plEditHedge(addedAt) {
+  const arr = plLoadHistory();
+  const e = arr.find(x => x.addedAt === addedAt);
+  if (!e) return;
+  const cur = (typeof e.hedgePnl === 'number') ? e.hedgePnl : 0;
+  const raw = prompt(`Update Hedge PnL untuk NFT #${e.tokenId} ($).\nSekarang: ${cur>=0?'+':''}$${cur.toFixed(2)}`, String(cur));
+  if (raw === null) return;
+  const n = parseFloat(raw);
+  if (isNaN(n)) { alert('Angka gak valid'); return; }
+  e.hedgePnl = n;
+  plSaveHistory(arr);
+  plRenderHistory();
 }
 
 function plDeleteHistoryEntry(addedAt) {
@@ -3014,19 +3033,28 @@ function plRenderHistory() {
     return;
   }
   // Aggregate summary
-  let totModal = 0, totPnl = 0;
+  let totModal = 0, totPoolPnl = 0, totHedge = 0;
   for (const e of arr) {
     if (typeof e.modal === 'number') totModal += e.modal;
-    if (typeof e.pnlUsd === 'number') totPnl += e.pnlUsd;
+    if (typeof e.pnlUsd === 'number') totPoolPnl += e.pnlUsd;
+    if (typeof e.hedgePnl === 'number') totHedge += e.hedgePnl;
   }
-  const totColor = totPnl >= 0 ? '#6ee7b7' : '#f87171';
-  const totSign = totPnl >= 0 ? '+' : '';
+  const totNet = totPoolPnl + totHedge;
+  const colorPool = totPoolPnl >= 0 ? '#6ee7b7' : '#f87171';
+  const colorHedge = totHedge >= 0 ? '#6ee7b7' : '#f87171';
+  const colorNet = totNet >= 0 ? '#6ee7b7' : '#f87171';
+  const sgn = n => n >= 0 ? '+' : '';
 
   const rows = arr.map(e => {
-    const c = (typeof e.pnlUsd === 'number' && e.pnlUsd >= 0) ? '#6ee7b7' : '#f87171';
-    const sgn = (typeof e.pnlUsd === 'number' && e.pnlUsd >= 0) ? '+' : '';
+    const poolPnl = (typeof e.pnlUsd === 'number') ? e.pnlUsd : 0;
+    const hedge = (typeof e.hedgePnl === 'number') ? e.hedgePnl : 0;
+    const net = poolPnl + hedge;
+    const cPool = poolPnl >= 0 ? '#6ee7b7' : '#f87171';
+    const cHedge = hedge >= 0 ? '#6ee7b7' : '#f87171';
+    const cNet = net >= 0 ? '#6ee7b7' : '#f87171';
     const ageStr = e.mintTimestamp ? plFormatAge(e.mintTimestamp) : '—';
     const poolShort = e.poolAddress ? e.poolAddress.slice(0,6)+'...'+e.poolAddress.slice(-4) : '—';
+    const netPct = (typeof e.modal === 'number' && e.modal) ? (net / e.modal * 100) : null;
     return `
       <tr style="border-bottom:1px solid #1f2638">
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}</td>
@@ -3034,7 +3062,9 @@ function plRenderHistory() {
         <td style="padding:10px 8px; font-size:11px; color:${e.source === 'staked' ? '#a78bfa' : '#94a3b8'}; white-space:nowrap">${e.source === 'staked' ? '🏦 Staked' : '👛 Wallet'}<br><span style="color:${e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${e.inRange ? '● IN' : '● OUT'}</span></td>
         <td style="padding:10px 8px; font-size:12px; color:#fbbf24; font-family:monospace; text-align:right">${typeof e.modal === 'number' ? '$'+e.modal.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-family:monospace; text-align:right">${typeof e.curUsd === 'number' ? '$'+e.curUsd.toFixed(2) : '—'}</td>
-        <td style="padding:10px 8px; font-size:12px; color:${c}; font-family:monospace; text-align:right; font-weight:700">${typeof e.pnlUsd === 'number' ? sgn+'$'+e.pnlUsd.toFixed(2) : '—'}<br><span style="font-size:10px; font-weight:400">${typeof e.pnlPct === 'number' ? sgn+e.pnlPct.toFixed(2)+'%' : ''}</span></td>
+        <td style="padding:10px 8px; font-size:12px; color:${cPool}; font-family:monospace; text-align:right">${sgn(poolPnl)}$${poolPnl.toFixed(2)}</td>
+        <td style="padding:10px 8px; font-size:12px; color:${cHedge}; font-family:monospace; text-align:right; cursor:pointer; border-left:1px dashed #2a3548" onclick="plEditHedge(${e.addedAt})" title="Klik untuk edit hedge PnL">${sgn(hedge)}$${hedge.toFixed(2)} <span style="color:#6b7280; font-size:9px">✎</span></td>
+        <td style="padding:10px 8px; font-size:13px; color:${cNet}; font-family:monospace; text-align:right; font-weight:700; background:#0a0e16">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:10px; font-weight:400">${netPct !== null ? sgn(net)+netPct.toFixed(2)+'%' : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' AERO' : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${ageStr}</td>
         <td style="padding:10px 8px; text-align:center">
@@ -3045,10 +3075,12 @@ function plRenderHistory() {
 
   el.innerHTML = `
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; overflow:hidden">
-      <div style="background:#0d1219; padding:10px 14px; display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638">
+      <div style="background:#0d1219; padding:10px 14px; display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638">
         <div><div style="font-size:10px; color:#9ca3af">Total Entries</div><div style="font-size:16px; color:#d0d8e0; font-weight:700">${arr.length}</div></div>
-        <div><div style="font-size:10px; color:#9ca3af">Total Modal (sum)</div><div style="font-size:16px; color:#fbbf24; font-weight:700">$${totModal.toFixed(2)}</div></div>
-        <div><div style="font-size:10px; color:#9ca3af">Total PnL (sum)</div><div style="font-size:16px; color:${totColor}; font-weight:700">${totSign}$${totPnl.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Total Modal</div><div style="font-size:16px; color:#fbbf24; font-weight:700">$${totModal.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Pool PnL</div><div style="font-size:16px; color:${colorPool}; font-weight:700">${sgn(totPoolPnl)}$${totPoolPnl.toFixed(2)}</div></div>
+        <div><div style="font-size:10px; color:#9ca3af">Hedge PnL (GMX)</div><div style="font-size:16px; color:${colorHedge}; font-weight:700">${sgn(totHedge)}$${totHedge.toFixed(2)}</div></div>
+        <div style="background:#0a1a14; padding:6px 10px; border-radius:5px; border:1px solid ${totNet >= 0 ? '#064e3b' : '#7f1d1d'}"><div style="font-size:10px; color:#9ca3af">NET TOTAL</div><div style="font-size:18px; color:${colorNet}; font-weight:700">${sgn(totNet)}$${totNet.toFixed(2)}</div></div>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%; border-collapse:collapse; font-family:'Inter', sans-serif">
@@ -3058,10 +3090,12 @@ function plRenderHistory() {
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Pair / NFT / Pool</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Status</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Modal</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Value</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">PnL</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Value LP</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Pool PnL</th>
+              <th style="padding:8px; font-size:10px; color:#a78bfa; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Hedge ✎</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right; background:#0a0e16">NET</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">AERO</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Umur Posisi</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Umur</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:center">⋯</th>
             </tr>
           </thead>
