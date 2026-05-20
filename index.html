@@ -1169,7 +1169,7 @@
             <button class="btn" onclick="plScanClosed()" style="width:100%; background:#a78bfa; color:#1a0f3a; font-weight:700">🔎 Scan</button>
           </div>
         </div>
-        <div style="margin-top:8px; font-size:10px; color:#6b7280">Scan recent txs wallet, filter ke contract DEX/farm yg dikenal (NPM, MasterChef, Voter, vfat router). Hasilnya list tx kandidat — kamu pilih yg cocok closed positionnya.</div>
+        <div style="margin-top:8px; font-size:10px; color:#6b7280">Scan 50 tx terbaru wallet di Etherscan V2. Yang `to` = contract DEX/farm dikenal di-mark badge <span style="color:#6ee7b7; background:#064e3b; padding:1px 5px; border-radius:3px">DEX</span> (highlight hijau). Pilih yang cocok close-nya, copy hash.</div>
         <div id="pl_scanstatus" style="display:none; margin-top:10px; font-size:11px"></div>
         <div id="pl_scanresults" style="margin-top:10px"></div>
       </div>
@@ -3308,7 +3308,7 @@ async function plScanClosed() {
     const data = await r.json();
     if (!r.ok || !data.ok) { plScanSetStatus(`❌ ${data.error || 'error'}${data.detail ? ' — ' + data.detail : ''}`, 'err'); return; }
     if (!data.candidates || !data.candidates.length) {
-      plScanSetStatus(`ℹ️ Gak ada tx ke contract DEX/farm dikenal dalam ${lookback} hari terakhir.`, 'warn');
+      plScanSetStatus(`ℹ️ Gak ada tx di wallet ini dalam ${lookback} hari terakhir, atau API key invalid/rate-limit. Coba lookback lebih lebar atau cek API key.`, 'warn');
       return;
     }
     plScanSetStatus(`✓ Ketemu ${data.candidates.length} tx kandidat`, 'ok');

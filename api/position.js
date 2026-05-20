@@ -31,7 +31,7 @@ const CHAINS = {
     masterchefs: [
       { name: 'PancakeSwap MasterChef V3', address: '0xC6A2Db661D5a5690172d8eB0a7DEA2d3008665A3', npmKind: 'uniswap', npmHint: '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364' }
     ],
-    basescan: 'https://api.basescan.org/api',
+    basescan: 'https://api.etherscan.io/v2/api',
     knownDexContracts: [
       // NPMs (already in npms list above tapi included untuk completeness scan)
       '0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53', // Aerodrome SlipStream NPM
@@ -961,8 +961,9 @@ module.exports = async function handler(req, res) {
         const url = `${cfg.basescan}?chainid=${chainIdMap[chainKey]}&module=account&action=txlist&address=${walletAddress}&page=1&offset=100&sort=desc&apikey=${basescanKey}`;
         const r = await fetch(url);
         const data = await r.json();
-        if (data.status !== '1' && data.status !== '0') {
-          return res.status(500).json({ error: 'Basescan API error', detail: data.message || data.result });
+        // status '1' = success, '0' = no results or error. Check message untuk membedakan.
+        if (data.status === '0' && data.message && data.message !== 'No transactions found') {
+          return res.status(500).json({ error: 'Basescan API error', detail: data.message + ' — ' + (typeof data.result === 'string' ? data.result : JSON.stringify(data.result)) });
         }
         const txs = Array.isArray(data.result) ? data.result : [];
         const cutoffTs = Math.floor(Date.now() / 1000) - (days * 86400);
