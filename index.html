@@ -3068,12 +3068,24 @@ async function plRefreshEntry(addedAt, silent) {
     if (!silent) plSetStatus(`⚠ Wallet gak ada di cache — buka tab lookup sekali untuk set.`, 'warn');
     return false;
   }
+  // Fast path: kita udah tau tokenId, oper sebagai manualTokenIds → backend skip enumeration (balanceOf/MasterChef scan/gauge).
+  // Dapat ~5-10s refresh per entry vs 30-90s enumeration full.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
   try {
     const r = await fetch('/api/position', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'findByPool', chain: e.chain, walletAddress: wallet, poolAddress: e.poolAddress })
+      body: JSON.stringify({
+        mode: 'findByPool',
+        chain: e.chain,
+        walletAddress: wallet,
+        poolAddress: e.poolAddress,
+        manualTokenIds: [String(e.tokenId)]
+      }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     const data = await r.json();
     if (!r.ok || !data.ok || !data.positions || !data.positions.length) return false;
     // Match by tokenId
@@ -3105,7 +3117,9 @@ async function plRefreshEntry(addedAt, silent) {
     };
     plSaveHistory(arr);
     return true;
-  } catch {
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (!silent) plSetStatus(`⚠ Refresh #${e.tokenId} gagal: ${err.name === 'AbortError' ? 'timeout 45s' : err.message}`, 'err');
     return false;
   }
 }
@@ -3194,7 +3208,7 @@ function plRenderHistory() {
         <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' '+(e.rewardSymbol || 'AERO') : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${ageStr}</td>
         <td style="padding:10px 8px; text-align:center; white-space:nowrap">
-          <button onclick="(async()=>{await plRefreshEntry(${e.addedAt}); plRenderHistory();})()" style="background:transparent; color:#38bdf8; border:1px solid #075985; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px; margin-right:3px" title="Refresh entry ini">🔄</button>
+          <button id="pl_refresh_${e.addedAt}" onclick="(async function(b){b.disabled=true; b.innerHTML='⏳'; b.style.opacity='0.6'; await plRefreshEntry(${e.addedAt}); plRenderHistory();})(this)" style="background:transparent; color:#38bdf8; border:1px solid #075985; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px; margin-right:3px" title="Refresh entry ini">🔄</button>
           <button onclick="plDeleteHistoryEntry(${e.addedAt})" style="background:transparent; color:#f87171; border:1px solid #7f1d1d; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px">🗑</button>
         </td>
       </tr>`;
