@@ -3065,6 +3065,26 @@ function plEditHedge(addedAt) {
   plRenderHistory();
 }
 
+function plMarkClosed(addedAt) {
+  const arr = plLoadHistory();
+  const idx = arr.findIndex(x => x.addedAt === addedAt);
+  if (idx < 0) return;
+  const e = arr[idx];
+  if (e.source === 'closed-tx' || e.source === 'closed-manual') {
+    plSetStatus(`⚠ Entry NFT #${e.tokenId} udah closed.`, 'warn');
+    return;
+  }
+  if (!confirm(`Tandai NFT #${e.tokenId} (${e.pair || '?'}) sebagai CLOSED?\n\nSnapshot saat ini akan di-freeze:\n- Modal: $${(e.modal || 0).toFixed(2)}\n- Value LP: $${(e.curUsd || 0).toFixed(2)}\n- Pool PnL: ${(e.pnlUsd || 0) >= 0 ? '+' : ''}$${(e.pnlUsd || 0).toFixed(2)}\n- Reward: ${e.aeroAmt ? e.aeroAmt.toFixed(2) + ' ' + (e.rewardSymbol || '?') : '—'}\n- Hedge: ${(e.hedgePnl || 0) >= 0 ? '+' : ''}$${(e.hedgePnl || 0).toFixed(2)}\n\nAuto-refresh ke posisi ini akan di-skip setelah ditutup.`)) return;
+  e.source = 'closed-manual';
+  e.inRange = false;
+  e.closedAt = Math.floor(Date.now() / 1000);
+  arr[idx] = e;
+  plSaveHistory(arr);
+  plRenderHistory();
+  plSetStatus(`✓ NFT #${e.tokenId} ditandai closed. NET realized: ${((e.pnlUsd || 0) + (e.hedgePnl || 0)) >= 0 ? '+' : ''}$${((e.pnlUsd || 0) + (e.hedgePnl || 0)).toFixed(2)}`, 'ok');
+  setTimeout(() => plSetStatus(''), 5000);
+}
+
 function plDeleteHistoryEntry(addedAt) {
   if (!confirm('Hapus entry ini dari history?')) return;
   const arr = plLoadHistory().filter(e => e.addedAt !== addedAt);
@@ -3098,6 +3118,8 @@ async function plRefreshEntry(addedAt, silent) {
   const idx = arr.findIndex(x => x.addedAt === addedAt);
   if (idx < 0) return false;
   const e = arr[idx];
+  // Skip refresh untuk entry closed (final snapshot, gak boleh ke-overwrite live)
+  if (e.source === 'closed-tx' || e.source === 'closed-manual') return false;
   if (!e.poolAddress || !e.tokenId) {
     if (!silent) plSetStatus(`⚠ Entry #${e.tokenId} gak punya pool address — skip refresh.`, 'warn');
     return false;
@@ -3223,7 +3245,7 @@ function plRenderHistory() {
   let totModal = 0, totPoolPnl = 0, totHedge = 0; // ACTIVE only
   let closedModal = 0, closedPoolPnl = 0, closedHedge = 0, closedCount = 0;
   for (const e of arr) {
-    const isClosed = e.source === 'closed-tx';
+    const isClosed = e.source === 'closed-tx' || e.source === 'closed-manual';
     if (isClosed) {
       closedCount++;
       if (typeof e.modal === 'number') closedModal += e.modal;
@@ -3256,7 +3278,7 @@ function plRenderHistory() {
       <tr style="border-bottom:1px solid #1f2638">
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}${e.lastRefreshed ? `<br><span style="font-size:9px; color:#38bdf8">↻ ${plFormatAge(Math.floor(e.lastRefreshed/1000))} lalu</span>` : ''}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-weight:600">${e.pair || '—'} ${e.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 5px; border-radius:3px">OP</span>' : e.chain === 'arbitrum' ? '<span style="color:#60a5fa; font-size:9px; background:#0a1027; padding:1px 5px; border-radius:3px">ARB</span>' : e.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 5px; border-radius:3px">BASE</span>' : ''}<br><span style="font-size:10px; color:#6b7280">#${e.tokenId} · ${poolShort}</span></td>
-        <td style="padding:10px 8px; font-size:11px; color:${e.source === 'closed-tx' ? '#6b7280' : e.source === 'staked' ? '#a78bfa' : (e.source && e.source.startsWith('masterchef')) ? '#fbbf24' : '#94a3b8'}; white-space:nowrap">${e.source === 'closed-tx' ? '🔒 Closed' : e.source === 'staked' ? '🏦 Gauge' : (e.source && e.source.startsWith('masterchef')) ? '🥞 MasterChef' : '👛 Wallet'}<br><span style="color:${e.source === 'closed-tx' ? '#6b7280' : e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${e.source === 'closed-tx' ? '● EXITED' : e.inRange ? '● IN' : '● OUT'}</span></td>
+        <td style="padding:10px 8px; font-size:11px; color:${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '#6b7280' : e.source === 'staked' ? '#a78bfa' : (e.source && e.source.startsWith('masterchef')) ? '#fbbf24' : '#94a3b8'}; white-space:nowrap">${e.source === 'closed-tx' ? '🔒 Closed' : e.source === 'closed-manual' ? '🔒 Closed (manual)' : e.source === 'staked' ? '🏦 Gauge' : (e.source && e.source.startsWith('masterchef')) ? '🥞 MasterChef' : '👛 Wallet'}<br><span style="color:${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '#6b7280' : e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '● EXITED' : e.inRange ? '● IN' : '● OUT'}</span></td>
         <td style="padding:10px 8px; font-size:12px; color:#fbbf24; font-family:monospace; text-align:right">${typeof e.modal === 'number' ? '$'+e.modal.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-family:monospace; text-align:right">${typeof e.curUsd === 'number' ? '$'+e.curUsd.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:${cPool}; font-family:monospace; text-align:right">${sgn(poolPnl)}$${poolPnl.toFixed(2)}</td>
@@ -3265,7 +3287,10 @@ function plRenderHistory() {
         <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' '+(e.rewardSymbol || 'AERO') : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${ageStr}</td>
         <td style="padding:10px 8px; text-align:center; white-space:nowrap">
-          <button id="pl_refresh_${e.addedAt}" onclick="(async function(b){b.disabled=true; b.innerHTML='⏳'; b.style.opacity='0.6'; await plRefreshEntry(${e.addedAt}); plRenderHistory();})(this)" style="background:transparent; color:#38bdf8; border:1px solid #075985; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px; margin-right:3px" title="Refresh entry ini">🔄</button>
+          ${(e.source !== 'closed-tx' && e.source !== 'closed-manual') ? `
+            <button id="pl_refresh_${e.addedAt}" onclick="(async function(b){b.disabled=true; b.innerHTML='⏳'; b.style.opacity='0.6'; await plRefreshEntry(${e.addedAt}); plRenderHistory();})(this)" style="background:transparent; color:#38bdf8; border:1px solid #075985; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px; margin-right:3px" title="Refresh entry ini">🔄</button>
+            <button onclick="plMarkClosed(${e.addedAt})" style="background:transparent; color:#fbbf24; border:1px solid #92400e; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px; margin-right:3px" title="Tandai closed (freeze snapshot saat ini)">🔒</button>
+          ` : ''}
           <button onclick="plDeleteHistoryEntry(${e.addedAt})" style="background:transparent; color:#f87171; border:1px solid #7f1d1d; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px">🗑</button>
         </td>
       </tr>`;
@@ -3273,6 +3298,57 @@ function plRenderHistory() {
 
   const activeCount = arr.length - closedCount;
   const closedNetColor = closedNet >= 0 ? '#6ee7b7' : '#f87171';
+
+  // Realized PnL breakdown per pair
+  const closedByPair = {};
+  for (const e of arr) {
+    if (e.source !== 'closed-tx' && e.source !== 'closed-manual') continue;
+    const key = (e.pair || '?') + '||' + (e.chain || '?');
+    if (!closedByPair[key]) closedByPair[key] = { pair: e.pair || '?', chain: e.chain || '?', count: 0, modal: 0, poolPnl: 0, hedgePnl: 0, lastClosedAt: 0 };
+    closedByPair[key].count++;
+    if (typeof e.modal === 'number') closedByPair[key].modal += e.modal;
+    if (typeof e.pnlUsd === 'number') closedByPair[key].poolPnl += e.pnlUsd;
+    if (typeof e.hedgePnl === 'number') closedByPair[key].hedgePnl += e.hedgePnl;
+    if (e.closedAt && e.closedAt > closedByPair[key].lastClosedAt) closedByPair[key].lastClosedAt = e.closedAt;
+  }
+  const realizedRows = Object.values(closedByPair).sort((a, b) => b.lastClosedAt - a.lastClosedAt).map(g => {
+    const net = g.poolPnl + g.hedgePnl;
+    const netPct = g.modal ? (net / g.modal * 100) : 0;
+    const c = net >= 0 ? '#6ee7b7' : '#f87171';
+    const chainBadge = g.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 4px; border-radius:3px">OP</span>' : g.chain === 'arbitrum' ? '<span style="color:#60a5fa; font-size:9px; background:#0a1027; padding:1px 4px; border-radius:3px">ARB</span>' : g.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 4px; border-radius:3px">BASE</span>' : '';
+    return `<tr style="border-bottom:1px solid #1f2638">
+      <td style="padding:8px; font-size:11px; color:#d0d8e0; font-weight:600">${g.pair} ${chainBadge}</td>
+      <td style="padding:8px; font-size:11px; text-align:center; color:#9ca3af">${g.count}</td>
+      <td style="padding:8px; font-size:11px; text-align:right; color:#fbbf24; font-family:monospace">$${g.modal.toFixed(2)}</td>
+      <td style="padding:8px; font-size:11px; text-align:right; color:${g.poolPnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace">${sgn(g.poolPnl)}$${g.poolPnl.toFixed(2)}</td>
+      <td style="padding:8px; font-size:11px; text-align:right; color:${g.hedgePnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace">${sgn(g.hedgePnl)}$${g.hedgePnl.toFixed(2)}</td>
+      <td style="padding:8px; font-size:12px; text-align:right; color:${c}; font-family:monospace; font-weight:700; background:#0a0e16">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:9px; font-weight:400">${sgn(net)}${netPct.toFixed(2)}%</span></td>
+    </tr>`;
+  }).join('');
+  const realizedSection = closedCount > 0 ? `
+    <div style="background:#0a0e16; padding:12px 14px; border-bottom:1px solid #1f2638">
+      <div style="font-size:11px; color:#a78bfa; font-weight:600; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em">📊 Realized PnL — Breakdown per Pool</div>
+      <table style="width:100%; border-collapse:collapse">
+        <thead style="background:#131826"><tr>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:left">Pool</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:center">Closed</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Modal</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Pool PnL</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Hedge</th>
+          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">NET</th>
+        </tr></thead>
+        <tbody>${realizedRows}</tbody>
+        <tfoot style="background:#131826"><tr style="border-top:2px solid #064e3b">
+          <td style="padding:8px; font-size:11px; color:#a78bfa; font-weight:700">TOTAL REALIZED</td>
+          <td style="padding:8px; font-size:11px; text-align:center; color:#d0d8e0; font-weight:700">${closedCount}</td>
+          <td style="padding:8px; font-size:11px; text-align:right; color:#fbbf24; font-family:monospace; font-weight:700">$${closedModal.toFixed(2)}</td>
+          <td style="padding:8px; font-size:11px; text-align:right; color:${closedPoolPnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace; font-weight:700">${sgn(closedPoolPnl)}$${closedPoolPnl.toFixed(2)}</td>
+          <td style="padding:8px; font-size:11px; text-align:right; color:${closedHedge >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace; font-weight:700">${sgn(closedHedge)}$${closedHedge.toFixed(2)}</td>
+          <td style="padding:8px; font-size:13px; text-align:right; color:${closedNetColor}; font-family:monospace; font-weight:700; background:#0a1a14">${sgn(closedNet)}$${closedNet.toFixed(2)}</td>
+        </tr></tfoot>
+      </table>
+    </div>` : '';
+
   const closedHeader = closedCount > 0 ? `
       <div style="background:#0a0e16; padding:8px 14px; display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638; border-top:1px dashed #1f2638">
         <div><div style="font-size:9px; color:#6b7280">🔒 Closed (${closedCount})</div></div>
@@ -3291,6 +3367,7 @@ function plRenderHistory() {
         <div style="background:#0a1a14; padding:6px 10px; border-radius:5px; border:1px solid ${totNet >= 0 ? '#064e3b' : '#7f1d1d'}"><div style="font-size:10px; color:#9ca3af">NET (Aktif)</div><div style="font-size:18px; color:${colorNet}; font-weight:700">${sgn(totNet)}$${totNet.toFixed(2)}</div></div>
       </div>
       ${closedHeader}
+      ${realizedSection}
       <div style="overflow-x:auto">
         <table style="width:100%; border-collapse:collapse; font-family:'Inter', sans-serif">
           <thead style="background:#0d1219">
