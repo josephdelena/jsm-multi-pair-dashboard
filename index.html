@@ -225,7 +225,7 @@
   <div class="header">
     <div>
       <h1>JSM MULTI-PAIR LP DASHBOARD <span class="dot dot-active"></span></h1>
-      <div class="meta">Dual Hedge Strategy • 4 Pairs • <span id="last-update">—</span></div>
+      <div class="meta">Cascade Dynamic + Emergency Hedge • 4 Pairs • <span id="last-update">—</span></div>
     </div>
     <div style="display:flex; gap:8px">
       <button class="btn" onclick="setApiKey()">🔑 API Key</button>
@@ -265,8 +265,8 @@
     </div>
     <div class="stat">
       <div class="stat-label">Est. Annual</div>
-      <div class="stat-value pos">+35.5%</div>
-      <div class="stat-sub">Blended target</div>
+      <div class="stat-value pos">~+50%</div>
+      <div class="stat-sub">Hedge + yield blended</div>
     </div>
   </div>
 
@@ -1114,7 +1114,7 @@ const PAIRS = {
   SOL: {
     name: 'SOL/USDC',
     symbol: 'SOLUSDT',
-    range_up: 1.0, range_down: 3.0, trigger: 1.1,
+    range_up: 1.0, range_down: 4.0, trigger: 3.5,
     pool: 'Aerodrome CL10',
     npm: NPM.AERODROME_SLIPSTREAM,
     gauge: '0xC58eC2d32FFA0c8c0cf5d15ceF7AE3cC70d2fa69',
@@ -1123,7 +1123,7 @@ const PAIRS = {
   ETH: {
     name: 'ETH/USDC',
     symbol: 'ETHUSDT',
-    range_up: 1.0, range_down: 3.0, trigger: 1.1,
+    range_up: 1.0, range_down: 6.0, trigger: 5.0,
     pool: 'Aerodrome CL100',
     npm: NPM.AERODROME_SLIPSTREAM,
     color: '#60a5fa'
@@ -1131,7 +1131,7 @@ const PAIRS = {
   VIRTUAL: {
     name: 'VIRTUAL/USDC',
     symbol: 'VIRTUALUSDT',
-    range_up: 1.0, range_down: 5.0, trigger: 1.1,
+    range_up: 1.0, range_down: 5.0, trigger: 3.0,
     pool: 'Uniswap CL60',
     npm: NPM.UNISWAP_V3,
     color: '#34d399'
@@ -1139,7 +1139,7 @@ const PAIRS = {
   BTC: {
     name: 'USDC/cbBTC',
     symbol: 'BTCUSDT',
-    range_up: 1.0, range_down: 2.0, trigger: 0.5,
+    range_up: 1.0, range_down: 3.0, trigger: 2.7,
     pool: 'Aerodrome CL50',
     npm: NPM.AERODROME_SLIPSTREAM,
     color: '#fbbf24'
