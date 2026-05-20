@@ -663,11 +663,11 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
   }
 
   // (0) Manual token IDs — untuk kasus vfat zap (NFT di-mint langsung ke proxy, gak pernah di wallet user)
-  if (Array.isArray(manualTokenIds) && manualTokenIds.length) {
+  const hasManual = Array.isArray(manualTokenIds) && manualTokenIds.length > 0;
+  if (hasManual) {
     for (const tid of manualTokenIds) {
       const tokenId = String(tid).trim();
       if (!tokenId || !/^\d+$/.test(tokenId)) continue;
-      // Cari NPM mana yg punya tokenId ini via ownerOf
       let foundNpm = null, ownerAddr = null;
       for (const npm of getNpms()) {
         try {
@@ -677,7 +677,6 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
         } catch { /* not in this NPM, try next */ }
       }
       if (!foundNpm) { diag.manualTokenIds.push({ tokenId, error: 'tokenId gak ditemukan di NPM manapun di chain ini' }); continue; }
-      // Tentukan source berdasarkan owner
       let source = 'manual';
       const masterchefs = getMasterchefs();
       const isMasterchef = masterchefs.find(mc => mc.address.toLowerCase() === ownerAddr);
@@ -687,6 +686,8 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
       diag.manualTokenIds.push({ tokenId, npm: foundNpm.name, owner: ownerAddr, source });
       await tryMatch(foundNpm, tokenId, source);
     }
+    // FAST PATH: user kasih tokenId eksplisit, skip enumeration mahal (balanceOf/MasterChef scan/gauge)
+    return { results, diag };
   }
 
   // (A) Enumerate via NPM ownership (unstaked NFTs masih di wallet)
