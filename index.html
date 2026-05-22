@@ -3299,26 +3299,29 @@ function plFmtPx(v) {
 
 // Orientasi pair selalu jadi VOLATILE/USDC (harga token dalam USDC).
 // Kalau pool aslinya USDC/ALTS, label + range + harga di-flip (price = 1/price).
-function plOrientPair(pairStr, rangeLower, rangeUpper, currentPrice) {
+function plOrientPair(pairStr, rangeLower, rangeUpper, currentPrice, entryPrice) {
   const parts = (pairStr || '').split('/');
   const t0 = (parts[0] || '').toUpperCase();
   const t1 = (parts[1] || '').toUpperCase();
   const isUSDC = s => s === 'USDC' || s === 'USDBC';
   const hasRange = typeof rangeLower === 'number' && typeof rangeUpper === 'number' && rangeLower > 0 && rangeUpper > 0;
   const hasCur = typeof currentPrice === 'number' && currentPrice > 0;
+  const hasEntry = typeof entryPrice === 'number' && entryPrice > 0;
   if (isUSDC(t0) && !isUSDC(t1)) {
     return {
       label: `${parts[1]}/${parts[0]}`,
       lo: hasRange ? 1 / rangeUpper : null,
       hi: hasRange ? 1 / rangeLower : null,
-      cur: hasCur ? 1 / currentPrice : null
+      cur: hasCur ? 1 / currentPrice : null,
+      entry: hasEntry ? 1 / entryPrice : null
     };
   }
   return {
     label: pairStr || '—',
     lo: hasRange ? rangeLower : null,
     hi: hasRange ? rangeUpper : null,
-    cur: hasCur ? currentPrice : null
+    cur: hasCur ? currentPrice : null,
+    entry: hasEntry ? entryPrice : null
   };
 }
 
@@ -3341,8 +3344,19 @@ function plRangeBar(o) {
   const mk = inRange ? '#f4f9ff' : '#f87171';
   const leftTxt = outLow ? 'OUT ▼' : `▼ ${roomDown.toFixed(1)}%`;
   const rightTxt = outHigh ? 'OUT ▲' : `▲ ${roomUp.toFixed(1)}%`;
+  // Marker entry (titik posisi pas baru lahir) — patokan setting bener/salah.
+  // Mepet atas (kanan, >50%) = bener. Mepet bawah (kiri) = salah setting.
+  let entryMark = '', verdict = '';
+  if (typeof o.entry === 'number' && o.entry > 0) {
+    const entryPct = Math.max(2, Math.min(98, (o.entry - o.lo) / span * 100));
+    const ok = entryPct > 50;
+    const ec = ok ? '#6ee7b7' : '#f87171';
+    entryMark = `<div style="position:absolute; left:${entryPct}%; top:-9px; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid ${ec}; transform:translateX(-4px)" title="titik entry"></div>`;
+    verdict = `<div style="font-size:9px; margin-top:2px; color:${ec}">entry ${ok ? 'mepet atas ✓' : 'mepet bawah ⚠ salah'}</div>`;
+  }
   return `<div style="width:170px; margin-left:auto; font-family:monospace">
     <div style="position:relative; height:8px; background:${trackBg}; border:1px solid ${trackBd}; border-radius:5px">
+      ${entryMark}
       <div style="position:absolute; left:${clamped}%; top:-3px; width:3px; height:12px; background:${mk}; border-radius:1px; transform:translateX(-1.5px)"></div>
     </div>
     <div style="display:flex; justify-content:space-between; font-size:9px; color:#6b7280; margin-top:3px">
@@ -3353,6 +3367,7 @@ function plRangeBar(o) {
       <span style="color:#e8edf3; font-weight:700; font-size:11px">${plFmtPx(o.cur)}</span>
       <span style="color:#6ee7b7">${rightTxt}</span>
     </div>
+    ${verdict}
   </div>`;
 }
 
@@ -3396,7 +3411,7 @@ function plRenderHistory() {
 
   // Helper render 1 baris tabel — dipakai buat tabel ACTIVE maupun CLOSED.
   const renderRow = (e) => {
-    const oriented = plOrientPair(e.pair, e.rangeLower, e.rangeUpper, e.currentPrice);
+    const oriented = plOrientPair(e.pair, e.rangeLower, e.rangeUpper, e.currentPrice, e.entryPrice);
     const poolPnl = (typeof e.pnlUsd === 'number') ? e.pnlUsd : 0;
     const hedge = (typeof e.hedgePnl === 'number') ? e.hedgePnl : 0;
     const net = poolPnl + hedge;
@@ -4006,7 +4021,7 @@ function plRenderPositions(data) {
             <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
             <div style="font-family:monospace; font-size:13px; color:#d0d8e0">${p.currentPrice ? p.currentPrice.toFixed(p.currentPrice < 1 ? 6 : 4) : '—'}</div>
           </div>
-          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, rewardSymbol, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange, rangeLower:p.rangeLower, rangeUpper:p.rangeUpper, currentPrice:p.currentPrice}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
+          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, rewardSymbol, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange, rangeLower:p.rangeLower, rangeUpper:p.rangeUpper, currentPrice:p.currentPrice, entryPrice:p.originalDeposit?.entryPrice}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
         </div>
       </div>
 

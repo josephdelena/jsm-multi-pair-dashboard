@@ -451,7 +451,7 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
   }
 
   let totalUsd = 0, totalAmount0 = 0n, totalAmount1 = 0n;
-  let mintBlock = null;
+  let mintBlock = null, entryPrice = null;
   const s0 = (token0Info.symbol || '').toUpperCase();
   const s1 = (token1Info.symbol || '').toUpperCase();
 
@@ -496,7 +496,10 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
     if (s0 === 'USDC' || s0 === 'USDBC') depositUsd = amt0H + (priceRatio ? amt1H / priceRatio : 0);
     else if (s1 === 'USDC' || s1 === 'USDBC') depositUsd = amt1H + amt0H * priceRatio;
     totalUsd += depositUsd;
-    if (!mintBlock) mintBlock = parseInt(log.blockNumber, 16);
+    if (!mintBlock) {
+      mintBlock = parseInt(log.blockNumber, 16);
+      entryPrice = (priceRatio > 0) ? priceRatio : null;  // harga pool pas mint pertama
+    }
   }
 
   // Ambil timestamp blok mint pertama (untuk hitung umur posisi)
@@ -515,6 +518,7 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
     mintBlock,
     mintTimestamp,
     mintCount: logs.length,
+    entryPrice,
     complete: scanComplete,
     ...(failedRanges.length ? { failedRanges } : {})
   };
