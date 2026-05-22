@@ -3150,29 +3150,41 @@ async function plRefreshEntry(addedAt, silent) {
         chain: e.chain,
         walletAddress: wallet,
         poolAddress: e.poolAddress,
-        manualTokenIds: [String(e.tokenId)]
+        manualTokenIds: [String(e.tokenId)],
+        skipDeposit: true
       }),
       signal: controller.signal
     });
     clearTimeout(timeoutId);
     const data = await r.json();
-    if (!r.ok || !data.ok || !data.positions || !data.positions.length) return false;
+    if (!r.ok || !data.ok) {
+      if (!silent) plSetStatus(`⚠ Refresh #${e.tokenId} gagal: ${data.detail || data.error || ('HTTP ' + r.status)}`, 'err');
+      return false;
+    }
+    if (!data.positions || !data.positions.length) {
+      if (!silent) plSetStatus(`⚠ Refresh #${e.tokenId}: posisi gak ke-match di pool ini — ${data.message || 'positions kosong'}`, 'warn');
+      return false;
+    }
     // Match by tokenId
     const p = data.positions.find(x => String(x.tokenId) === String(e.tokenId));
-    if (!p) return false;
+    if (!p) {
+      if (!silent) plSetStatus(`⚠ Refresh #${e.tokenId}: tokenId gak ada di hasil match.`, 'warn');
+      return false;
+    }
     // Re-compute curUsd, feesUsd, aeroUsd, pnlUsd
     const s0 = (p.token0.symbol || '').toUpperCase();
     const s1 = (p.token1.symbol || '').toUpperCase();
     let curUsd = 0, feesUsd = 0;
     if (s0 === 'USDC' || s0 === 'USDBC') { curUsd = p.token0.amount + (p.currentPrice ? p.token1.amount / p.currentPrice : 0); feesUsd = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0); }
     else if (s1 === 'USDC' || s1 === 'USDBC') { curUsd = p.token1.amount + p.token0.amount * p.currentPrice; feesUsd = p.token1.fees + p.token0.fees * p.currentPrice; }
-    // Solidly-style ecosystem (Aerodrome/Velodrome SlipStream): trading fees diteruskan ke voters
-    // (FeesVotingReward), bukan LP. LP cuma dapat emissions. Untuk posisi staked, fees LP = 0.
-    if (p.source === 'staked' && (p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || ''))) feesUsd = 0;
+    // SlipStream staked di gauge: trading fee diteruskan ke voters (FeesVotingReward), LP cuma dapat
+    // emissions → yield 0. SlipStream di wallet (unstaked): LP keep trading fee → yield dihitung normal.
+    if ((p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || '')) && p.source === 'staked') feesUsd = 0;
     const rewardSymbol = p.rewardSymbol || e.rewardSymbol || 'AERO';
     const aeroAmt = (typeof p.rewardAmount === 'number') ? p.rewardAmount : 0;
     const aeroUsd = (typeof p.rewardUsd === 'number') ? p.rewardUsd : 0;
     const modal = (p.originalDeposit && typeof p.originalDeposit.usdValue === 'number') ? p.originalDeposit.usdValue : e.modal;
+    if (!isFinite(feesUsd) || feesUsd < 0 || (modal && feesUsd > modal)) feesUsd = 0; // sanity: buang angka ngaco (modal udah ke-define)
     const pnlUsd = modal ? (curUsd + feesUsd + aeroUsd - modal) : null;
     const pnlPct = modal ? (pnlUsd / modal * 100) : null;
     // Update entry (preserve hedgePnl + addedAt)
@@ -3181,6 +3193,8 @@ async function plRefreshEntry(addedAt, silent) {
       modal, curUsd, feesUsd, aeroAmt, aeroUsd, rewardSymbol,
       pnlUsd, pnlPct,
       inRange: p.inRange,
+      rangeLower: (typeof p.rangeLower === 'number') ? p.rangeLower : e.rangeLower,
+      rangeUpper: (typeof p.rangeUpper === 'number') ? p.rangeUpper : e.rangeUpper,
       mintTimestamp: p.originalDeposit?.mintTimestamp || e.mintTimestamp,
       lastRefreshed: Date.now()
     };
@@ -3200,11 +3214,14 @@ async function plRefreshAll(silent) {
   }
   const arr = plLoadHistory();
   if (!arr.length) { if (!silent) plSetStatus('ℹ️ History kosong, gak ada yang di-refresh.', 'warn'); return; }
+  // Closed position gak perlu di-refresh — udah final. Cuma posisi aktif.
+  const active = arr.filter(e => e.source !== 'closed-tx' && e.source !== 'closed-manual');
+  if (!active.length) { if (!silent) plSetStatus('ℹ️ Gak ada posisi aktif buat di-refresh.', 'warn'); return; }
   _plRefreshing = true;
   let okCount = 0, errCount = 0;
   try {
-    if (!silent) plSetStatus(`⏳ Refresh ${arr.length} entries...`, 'warn');
-    for (const e of arr) {
+    if (!silent) plSetStatus(`⏳ Refresh ${active.length} posisi aktif...`, 'warn');
+    for (const e of active) {
       try {
         const ok = await plRefreshEntry(e.addedAt, true);
         if (ok) okCount++; else errCount++;
@@ -3215,7 +3232,7 @@ async function plRefreshAll(silent) {
       plRenderHistory();
     }
     if (!silent) {
-      plSetStatus(`✓ Refresh selesai: ${okCount}/${arr.length} berhasil${errCount ? `, ${errCount} gagal` : ''}.`, okCount ? 'ok' : 'warn');
+      plSetStatus(`✓ Refresh selesai: ${okCount}/${active.length} berhasil${errCount ? `, ${errCount} gagal` : ''}.`, okCount ? 'ok' : 'warn');
       setTimeout(() => plSetStatus(''), 5000);
     }
   } catch (e) {
@@ -3224,6 +3241,12 @@ async function plRefreshAll(silent) {
   } finally {
     _plRefreshing = false; // ALWAYS reset, no matter what
   }
+}
+
+function plFmtPx(v) {
+  if (typeof v !== 'number' || !isFinite(v) || v <= 0) return '—';
+  const d = v >= 1000 ? 0 : v >= 1 ? 2 : v >= 0.01 ? 4 : 6;
+  return v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 function plFmtDate(ts) {
@@ -3264,7 +3287,8 @@ function plRenderHistory() {
   const colorNet = totNet >= 0 ? '#6ee7b7' : '#f87171';
   const sgn = n => n >= 0 ? '+' : '';
 
-  const rows = arr.map(e => {
+  // Helper render 1 baris tabel — dipakai buat tabel ACTIVE maupun CLOSED.
+  const renderRow = (e) => {
     const poolPnl = (typeof e.pnlUsd === 'number') ? e.pnlUsd : 0;
     const hedge = (typeof e.hedgePnl === 'number') ? e.hedgePnl : 0;
     const net = poolPnl + hedge;
@@ -3282,16 +3306,20 @@ function plRenderHistory() {
     }
     const poolShort = e.poolAddress ? e.poolAddress.slice(0,6)+'...'+e.poolAddress.slice(-4) : '—';
     const netPct = (typeof e.modal === 'number' && e.modal) ? (net / e.modal * 100) : null;
+    let yieldUsd = (typeof e.feesUsd === 'number') ? e.feesUsd : 0;
+    if (!isFinite(yieldUsd) || yieldUsd < 0 || (e.modal && yieldUsd > e.modal)) yieldUsd = 0;
     return `
       <tr style="border-bottom:1px solid #1f2638">
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}${e.lastRefreshed ? `<br><span style="font-size:9px; color:#38bdf8">↻ ${plFormatAge(Math.floor(e.lastRefreshed/1000))} lalu</span>` : ''}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-weight:600">${e.pair || '—'} ${e.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 5px; border-radius:3px">OP</span>' : e.chain === 'arbitrum' ? '<span style="color:#60a5fa; font-size:9px; background:#0a1027; padding:1px 5px; border-radius:3px">ARB</span>' : e.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 5px; border-radius:3px">BASE</span>' : ''}<br><span style="font-size:10px; color:#6b7280">#${e.tokenId} · ${poolShort}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '#6b7280' : e.source === 'staked' ? '#a78bfa' : (e.source && e.source.startsWith('masterchef')) ? '#fbbf24' : '#94a3b8'}; white-space:nowrap">${e.source === 'closed-tx' ? '🔒 Closed' : e.source === 'closed-manual' ? '🔒 Closed (manual)' : e.source === 'staked' ? '🏦 Gauge' : (e.source && e.source.startsWith('masterchef')) ? '🥞 MasterChef' : '👛 Wallet'}<br><span style="color:${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '#6b7280' : e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '● EXITED' : e.inRange ? '● IN' : '● OUT'}</span></td>
+        <td style="padding:10px 8px; font-size:10px; font-family:monospace; text-align:right; white-space:nowrap">${(typeof e.rangeLower === 'number' && typeof e.rangeUpper === 'number') ? `<span style="color:#9ca3af">↑ ${plFmtPx(e.rangeUpper)}</span><br><span style="color:#6b7280">↓ ${plFmtPx(e.rangeLower)}</span>` : '<span style="color:#6b7280">—</span>'}</td>
         <td style="padding:10px 8px; font-size:12px; color:#fbbf24; font-family:monospace; text-align:right">${typeof e.modal === 'number' ? '$'+e.modal.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-family:monospace; text-align:right">${typeof e.curUsd === 'number' ? '$'+e.curUsd.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:${cPool}; font-family:monospace; text-align:right">${sgn(poolPnl)}$${poolPnl.toFixed(2)}</td>
         <td style="padding:10px 8px; font-size:12px; color:${cHedge}; font-family:monospace; text-align:right; cursor:pointer; border-left:1px dashed #2a3548" onclick="plEditHedge(${e.addedAt})" title="Klik untuk edit hedge PnL">${sgn(hedge)}$${hedge.toFixed(2)} <span style="color:#6b7280; font-size:9px">✎</span></td>
-        <td style="padding:10px 8px; font-size:13px; color:${cNet}; font-family:monospace; text-align:right; font-weight:700; background:#0a0e16">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:10px; font-weight:400">${netPct !== null ? sgn(net)+netPct.toFixed(2)+'%' : ''}</span></td>
+        <td style="padding:10px 8px; font-size:15px; color:${cNet}; font-family:monospace; text-align:right; font-weight:800; background:#141b29; border-left:2px solid #37475f; border-right:2px solid #37475f">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:10px; font-weight:500; opacity:0.85">${netPct !== null ? sgn(net)+netPct.toFixed(2)+'%' : ''}</span></td>
+        <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${yieldUsd ? '$'+yieldUsd.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:11px; color:#6ee7b7; font-family:monospace; text-align:right">${typeof e.aeroAmt === 'number' && e.aeroAmt ? e.aeroAmt.toFixed(2)+' '+(e.rewardSymbol || 'AERO') : '—'}<br><span style="color:#9ca3af; font-size:10px">${typeof e.aeroUsd === 'number' && e.aeroUsd ? '$'+e.aeroUsd.toFixed(2) : ''}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${ageStr}</td>
         <td style="padding:10px 8px; text-align:center; white-space:nowrap">
@@ -3302,91 +3330,51 @@ function plRenderHistory() {
           <button onclick="plDeleteHistoryEntry(${e.addedAt})" style="background:transparent; color:#f87171; border:1px solid #7f1d1d; padding:3px 7px; border-radius:3px; cursor:pointer; font-size:10px">🗑</button>
         </td>
       </tr>`;
-  }).join('');
+  };
+  const emptyRow = (msg) => `<tr><td colspan="13" style="padding:16px; text-align:center; color:#6b7280; font-size:11px">${msg}</td></tr>`;
+  const activeEntries = arr.filter(e => e.source !== 'closed-tx' && e.source !== 'closed-manual');
+  const closedEntries = arr.filter(e => e.source === 'closed-tx' || e.source === 'closed-manual');
+  const rows = activeEntries.map(renderRow).join('') || emptyRow('Belum ada posisi aktif.');
+  const closedRows = closedEntries.map(renderRow).join('') || emptyRow('Belum ada posisi closed.');
 
   const activeCount = arr.length - closedCount;
   const closedNetColor = closedNet >= 0 ? '#6ee7b7' : '#f87171';
 
-  // Realized PnL breakdown per pair
-  const closedByPair = {};
-  let totalDurationSec = 0, totalDurationCount = 0;
-  for (const e of arr) {
-    if (e.source !== 'closed-tx' && e.source !== 'closed-manual') continue;
-    const key = (e.pair || '?') + '||' + (e.chain || '?');
-    if (!closedByPair[key]) closedByPair[key] = { pair: e.pair || '?', chain: e.chain || '?', count: 0, modal: 0, poolPnl: 0, hedgePnl: 0, lastClosedAt: 0, durationSum: 0, durationCount: 0 };
-    closedByPair[key].count++;
-    if (typeof e.modal === 'number') closedByPair[key].modal += e.modal;
-    if (typeof e.pnlUsd === 'number') closedByPair[key].poolPnl += e.pnlUsd;
-    if (typeof e.hedgePnl === 'number') closedByPair[key].hedgePnl += e.hedgePnl;
-    if (e.closedAt && e.closedAt > closedByPair[key].lastClosedAt) closedByPair[key].lastClosedAt = e.closedAt;
-    if (e.closedAt && e.mintTimestamp) {
-      const dur = e.closedAt - e.mintTimestamp;
-      if (dur > 0) {
-        closedByPair[key].durationSum += dur;
-        closedByPair[key].durationCount++;
-        totalDurationSec += dur;
-        totalDurationCount++;
-      }
-    }
-  }
-  const realizedRows = Object.values(closedByPair).sort((a, b) => b.lastClosedAt - a.lastClosedAt).map(g => {
-    const net = g.poolPnl + g.hedgePnl;
-    const netPct = g.modal ? (net / g.modal * 100) : 0;
-    const poolPnlPct = g.modal ? (g.poolPnl / g.modal * 100) : 0;
-    const c = net >= 0 ? '#6ee7b7' : '#f87171';
-    const cPool = g.poolPnl >= 0 ? '#6ee7b7' : '#f87171';
-    const chainBadge = g.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 4px; border-radius:3px">OP</span>' : g.chain === 'arbitrum' ? '<span style="color:#60a5fa; font-size:9px; background:#0a1027; padding:1px 4px; border-radius:3px">ARB</span>' : g.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 4px; border-radius:3px">BASE</span>' : '';
-    const avgDur = g.durationCount ? plFormatDuration(g.durationSum / g.durationCount) : '—';
-    const totalDur = g.durationCount ? plFormatDuration(g.durationSum) : '—';
-    const durStr = g.count > 1 ? `<span style="color:#d0d8e0">avg ${avgDur}</span><br><span style="font-size:9px; color:#6b7280">total ${totalDur}</span>` : avgDur;
-    return `<tr style="border-bottom:1px solid #1f2638">
-      <td style="padding:8px; font-size:11px; color:#d0d8e0; font-weight:600">${g.pair} ${chainBadge}</td>
-      <td style="padding:8px; font-size:11px; text-align:center; color:#9ca3af">${g.count}</td>
-      <td style="padding:8px; font-size:11px; text-align:right; color:#fbbf24; font-family:monospace">$${g.modal.toFixed(2)}</td>
-      <td style="padding:8px; font-size:11px; text-align:right; color:${cPool}; font-family:monospace">${sgn(g.poolPnl)}$${g.poolPnl.toFixed(2)}<br><span style="font-size:9px">${sgn(g.poolPnl)}${poolPnlPct.toFixed(2)}%</span></td>
-      <td style="padding:8px; font-size:11px; text-align:right; color:${g.hedgePnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace">${sgn(g.hedgePnl)}$${g.hedgePnl.toFixed(2)}</td>
-      <td style="padding:8px; font-size:12px; text-align:right; color:${c}; font-family:monospace; font-weight:700; background:#0a0e16">${sgn(net)}$${net.toFixed(2)}<br><span style="font-size:9px; font-weight:400">${sgn(net)}${netPct.toFixed(2)}%</span></td>
-      <td style="padding:8px; font-size:10px; text-align:left; color:#9ca3af; white-space:nowrap">${durStr}</td>
-    </tr>`;
-  }).join('');
-  const grandPoolPct = closedModal ? (closedPoolPnl / closedModal * 100) : 0;
-  const grandNetPct = closedModal ? (closedNet / closedModal * 100) : 0;
-  const grandAvgDur = totalDurationCount ? plFormatDuration(totalDurationSec / totalDurationCount) : '—';
-  const grandTotalDur = totalDurationCount ? plFormatDuration(totalDurationSec) : '—';
-  const realizedSection = closedCount > 0 ? `
-    <div style="background:#0a0e16; padding:12px 14px; border-bottom:1px solid #1f2638">
-      <div style="font-size:11px; color:#a78bfa; font-weight:600; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em">📊 Realized PnL — Breakdown per Pool</div>
-      <table style="width:100%; border-collapse:collapse">
-        <thead style="background:#131826"><tr>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:left">Pool</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:center">Closed</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Modal</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Pool PnL ($/%)</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">Hedge</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:right">NET ($/%)</th>
-          <th style="padding:6px 8px; font-size:9px; color:#9ca3af; text-align:left">Umur Posisi</th>
-        </tr></thead>
-        <tbody>${realizedRows}</tbody>
-        <tfoot style="background:#131826"><tr style="border-top:2px solid #064e3b">
-          <td style="padding:8px; font-size:11px; color:#a78bfa; font-weight:700">TOTAL REALIZED</td>
-          <td style="padding:8px; font-size:11px; text-align:center; color:#d0d8e0; font-weight:700">${closedCount}</td>
-          <td style="padding:8px; font-size:11px; text-align:right; color:#fbbf24; font-family:monospace; font-weight:700">$${closedModal.toFixed(2)}</td>
-          <td style="padding:8px; font-size:11px; text-align:right; color:${closedPoolPnl >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace; font-weight:700">${sgn(closedPoolPnl)}$${closedPoolPnl.toFixed(2)}<br><span style="font-size:9px">${sgn(closedPoolPnl)}${grandPoolPct.toFixed(2)}%</span></td>
-          <td style="padding:8px; font-size:11px; text-align:right; color:${closedHedge >= 0 ? '#6ee7b7' : '#f87171'}; font-family:monospace; font-weight:700">${sgn(closedHedge)}$${closedHedge.toFixed(2)}</td>
-          <td style="padding:8px; font-size:13px; text-align:right; color:${closedNetColor}; font-family:monospace; font-weight:700; background:#0a1a14">${sgn(closedNet)}$${closedNet.toFixed(2)}<br><span style="font-size:10px; font-weight:400">${sgn(closedNet)}${grandNetPct.toFixed(2)}%</span></td>
-          <td style="padding:8px; font-size:10px; text-align:left; color:#d0d8e0; white-space:nowrap">${totalDurationCount > 1 ? `avg ${grandAvgDur}<br><span style="font-size:9px; color:#6b7280">total ${grandTotalDur}</span>` : grandAvgDur}</td>
-        </tr></tfoot>
-      </table>
-    </div>` : '';
+  // Tabel "Breakdown per Pool" dihapus — tiap posisi closed itu unik,
+  // gak ada konsep agregasi "pool sama ditutup berkali-kali".
 
+  const closedPoolPct = closedModal ? (closedPoolPnl / closedModal * 100) : 0;
+  const closedHedgePct = closedModal ? (closedHedge / closedModal * 100) : 0;
+  const closedNetPct = closedModal ? (closedNet / closedModal * 100) : 0;
   const closedHeader = closedCount > 0 ? `
-      <div style="background:#0a0e16; padding:8px 14px; display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638; border-top:1px dashed #1f2638">
-        <div><div style="font-size:9px; color:#6b7280">🔒 Closed (${closedCount})</div></div>
+      <div style="background:#0a0e16; padding:8px 14px; display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638">
+        <div><div style="font-size:9px; color:#6b7280">Total Closed</div><div style="font-size:13px; color:#d0d8e0">${closedCount}</div></div>
         <div><div style="font-size:9px; color:#6b7280">Modal (realized)</div><div style="font-size:13px; color:#9ca3af">$${closedModal.toFixed(2)}</div></div>
-        <div><div style="font-size:9px; color:#6b7280">Realized Pool PnL</div><div style="font-size:13px; color:${closedPoolPnl >= 0 ? '#6ee7b7' : '#f87171'}">${sgn(closedPoolPnl)}$${closedPoolPnl.toFixed(2)}</div></div>
-        <div><div style="font-size:9px; color:#6b7280">Realized Hedge</div><div style="font-size:13px; color:${closedHedge >= 0 ? '#6ee7b7' : '#f87171'}">${sgn(closedHedge)}$${closedHedge.toFixed(2)}</div></div>
-        <div><div style="font-size:9px; color:#6b7280">Realized NET</div><div style="font-size:14px; color:${closedNetColor}; font-weight:600">${sgn(closedNet)}$${closedNet.toFixed(2)}</div></div>
+        <div><div style="font-size:9px; color:#6b7280">Realized Pool PnL</div><div style="font-size:13px; color:${closedPoolPnl >= 0 ? '#6ee7b7' : '#f87171'}">${sgn(closedPoolPnl)}$${closedPoolPnl.toFixed(2)} <span style="font-size:10px; opacity:0.7">${sgn(closedPoolPnl)}${closedPoolPct.toFixed(2)}%</span></div></div>
+        <div><div style="font-size:9px; color:#6b7280">Realized Hedge</div><div style="font-size:13px; color:${closedHedge >= 0 ? '#6ee7b7' : '#f87171'}">${sgn(closedHedge)}$${closedHedge.toFixed(2)} <span style="font-size:10px; opacity:0.7">${sgn(closedHedge)}${closedHedgePct.toFixed(2)}%</span></div></div>
+        <div><div style="font-size:9px; color:#6b7280">Realized NET</div><div style="font-size:14px; color:${closedNetColor}; font-weight:600">${sgn(closedNet)}$${closedNet.toFixed(2)} <span style="font-size:10px; font-weight:400; opacity:0.7">${sgn(closedNet)}${closedNetPct.toFixed(2)}%</span></div></div>
       </div>` : '';
+  const tableHead = `<thead style="background:#0d1219"><tr>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Dicatat</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Pair / NFT / Pool</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Status</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Range Pa–Pb</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Modal</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Value LP</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Pool PnL</th>
+              <th style="padding:8px; font-size:10px; color:#a78bfa; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Hedge ✎</th>
+              <th style="padding:8px; font-size:11px; color:#e5e7eb; text-transform:uppercase; letter-spacing:0.09em; text-align:right; background:#141b29; border-left:2px solid #37475f; border-right:2px solid #37475f; font-weight:800">NET</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Yield</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Emissions</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Umur</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:center">⋯</th>
+            </tr></thead>`;
+  const sectionBar = (icon, label, count, color, accent) => `
+      <div style="padding:9px 14px; background:#0d1219; border-top:1px solid #1f2638; border-bottom:1px solid #1f2638; display:flex; align-items:center; gap:9px">
+        <span style="width:3px; height:13px; background:${accent}; border-radius:2px; display:inline-block"></span>
+        <span style="font-size:12px; font-weight:700; color:${color}; text-transform:uppercase; letter-spacing:0.09em">${icon} ${label}</span>
+        <span style="font-size:11px; color:#9ca3af; background:#1a2030; padding:1px 8px; border-radius:10px; font-family:monospace">${count}</span>
+      </div>`;
   el.innerHTML = `
     <div style="background:#131826; border:1px solid #1f2638; border-radius:8px; overflow:hidden">
       <div style="background:#0d1219; padding:10px 14px; display:grid; grid-template-columns: repeat(5, 1fr); gap:14px; font-family:monospace; border-bottom:1px solid #1f2638">
@@ -3396,28 +3384,21 @@ function plRenderHistory() {
         <div><div style="font-size:10px; color:#9ca3af">Hedge PnL (Aktif)</div><div style="font-size:16px; color:${colorHedge}; font-weight:700">${sgn(totHedge)}$${totHedge.toFixed(2)}</div></div>
         <div style="background:#0a1a14; padding:6px 10px; border-radius:5px; border:1px solid ${totNet >= 0 ? '#064e3b' : '#7f1d1d'}"><div style="font-size:10px; color:#9ca3af">NET (Aktif)</div><div style="font-size:18px; color:${colorNet}; font-weight:700">${sgn(totNet)}$${totNet.toFixed(2)}</div></div>
       </div>
-      ${closedHeader}
-      ${realizedSection}
+      ${sectionBar('🟢', 'Active Positions', activeCount, '#6ee7b7', '#10b981')}
       <div style="overflow-x:auto">
         <table style="width:100%; border-collapse:collapse; font-family:'Inter', sans-serif">
-          <thead style="background:#0d1219">
-            <tr>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Dicatat</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Pair / NFT / Pool</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Status</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Modal</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Value LP</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Pool PnL</th>
-              <th style="padding:8px; font-size:10px; color:#a78bfa; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Hedge ✎</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right; background:#0a0e16">NET</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Emissions</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Umur</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:center">⋯</th>
-            </tr>
-          </thead>
+          ${tableHead}
           <tbody>${rows}</tbody>
         </table>
       </div>
+      ${closedCount > 0 ? sectionBar('🔒', 'Closed Positions', closedCount, '#cbd5e1', '#64748b') : ''}
+      ${closedHeader}
+      ${closedCount > 0 ? `<div style="overflow-x:auto">
+        <table style="width:100%; border-collapse:collapse; font-family:'Inter', sans-serif">
+          ${tableHead}
+          <tbody>${closedRows}</tbody>
+        </table>
+      </div>` : ''}
     </div>`;
 }
 
@@ -3482,15 +3463,19 @@ function plTxRenderResults(data) {
   const rows = data.tokenIds.map(t => {
     const ev = (t.events || []).map(e => e.type).join(', ');
     const tokens = t.position ? `${t.position.token0.slice(0,10)}... / ${t.position.token1.slice(0,10)}... fee=${t.position.feeOrSpacing}` : '(pos gagal: ' + (t.positionError || '?') + ')';
+    const poolLine = t.poolAddress
+      ? `<div style="color:#38bdf8; font-size:10px; margin-top:3px; word-break:break-all">pool: ${t.poolAddress}</div>`
+      : `<div style="color:#6b7280; font-size:10px; margin-top:3px">pool: gak ke-resolve dari tx ini</div>`;
+    const action = t.poolAddress
+      ? `<button onclick="plTxLookupDirect('${t.tokenId}', '${t.poolAddress}', '${data.chain}')" style="background:#38bdf8; color:#0a1f2a; border:none; padding:5px 12px; border-radius:3px; cursor:pointer; font-size:11px; font-weight:700">🔍 Cari Posisi</button>`
+      : `<button onclick="plTxUseTokenId('${t.tokenId}', '${t.position ? t.position.token0 + ',' + t.position.token1 : ''}')" style="background:#6ee7b7; color:#064e3b; border:none; padding:4px 10px; border-radius:3px; cursor:pointer; font-size:11px; font-weight:700">↑ Pakai TokenId</button>`;
     return `
       <tr style="border-bottom:1px solid #1f2638">
         <td style="padding:8px; font-family:monospace; color:#d0d8e0; font-weight:600">#${t.tokenId}</td>
         <td style="padding:8px; font-size:11px; color:#a78bfa">${t.npmName || '—'}</td>
-        <td style="padding:8px; font-size:10px; color:#9ca3af; font-family:monospace">${tokens}</td>
+        <td style="padding:8px; font-size:10px; color:#9ca3af; font-family:monospace">${tokens}${poolLine}</td>
         <td style="padding:8px; font-size:10px; color:#94a3b8">${ev}</td>
-        <td style="padding:8px; text-align:right">
-          <button onclick="plTxUseTokenId('${t.tokenId}', '${t.position ? t.position.token0 + ',' + t.position.token1 : ''}')" style="background:#6ee7b7; color:#064e3b; border:none; padding:4px 10px; border-radius:3px; cursor:pointer; font-size:11px; font-weight:700">↑ Pakai TokenId</button>
-        </td>
+        <td style="padding:8px; text-align:right">${action}</td>
       </tr>`;
   }).join('');
   // Token flows display
@@ -3554,7 +3539,7 @@ function plTxRenderResults(data) {
       </tr></thead><tbody>${rows}</tbody>
     </table></div>
     ${flowsHtml}
-    <div style="margin-top:8px; font-size:10px; color:#6b7280">💡 Klik <b>↑ Pakai TokenId</b> untuk lookup posisi (kalau NFT masih ada). Token Flows = berapa kamu terima/kirim di tx ini — pakai ini untuk hitung exit value (close) atau modal (open) manual.</div>`;
+    <div style="margin-top:8px; font-size:10px; color:#6b7280">💡 Klik <b>🔍 Cari Posisi</b> — pool address + tokenId di-isi otomatis lalu langsung di-lookup. Token Flows = berapa kamu terima/kirim di tx ini — pakai untuk hitung exit value (close) atau modal (open) manual.</div>`;
 }
 
 function plSaveClosed(snap) {
@@ -3633,6 +3618,19 @@ function plTxUseTokenId(tokenId, tokensCsv) {
   plTxSetStatus(`✓ TokenId #${tokenId} di-isi ke field Token ID Manual. Lengkapi Pool Address + klik 🔍 Cari Posisi di atas.`, 'ok');
   // Scroll ke pool address field
   document.getElementById('pl_pool')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Satu-klik dari hasil Extract Tx: pool + tokenId + chain di-isi otomatis, langsung lookup.
+function plTxLookupDirect(tokenId, poolAddress, chain) {
+  const pf = document.getElementById('pl_pool');
+  const tf = document.getElementById('pl_tokenids');
+  const cf = document.getElementById('pl_chain');
+  if (pf) pf.value = poolAddress;
+  if (tf) tf.value = tokenId;
+  if (cf && chain) cf.value = chain;
+  plTxSetStatus(`✓ Pool + TokenId #${tokenId} ke-isi otomatis — menjalankan Cari Posisi...`, 'ok');
+  document.getElementById('pl_pool')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  plLookup();
 }
 
 async function plScanClosed() {
@@ -3869,7 +3867,8 @@ function plRenderPositions(data) {
     let feesUsd = 0;
     if (s0 === 'USDC' || s0 === 'USDBC') feesUsd = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0);
     else if (s1 === 'USDC' || s1 === 'USDBC') feesUsd = p.token1.fees + p.token0.fees * p.currentPrice;
-    if (p.source === 'staked' && (p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || ''))) feesUsd = 0;
+    if ((p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || '')) && p.source === 'staked') feesUsd = 0;
+    if (!isFinite(feesUsd) || feesUsd < 0 || (modal && feesUsd > modal)) feesUsd = 0;
 
     // Reward (AERO di Base, VELO di OP) — pakai server-side price kalau ada
     const rewardSymbol = p.rewardSymbol || 'AERO';
@@ -3899,7 +3898,7 @@ function plRenderPositions(data) {
             <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
             <div style="font-family:monospace; font-size:13px; color:#d0d8e0">${p.currentPrice ? p.currentPrice.toFixed(p.currentPrice < 1 ? 6 : 4) : '—'}</div>
           </div>
-          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, rewardSymbol, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
+          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, rewardSymbol, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange, rangeLower:p.rangeLower, rangeUpper:p.rangeUpper}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
         </div>
       </div>
 
@@ -3952,7 +3951,8 @@ function plRenderPositions(data) {
       let curU = 0, feU = 0;
       if (s0 === 'USDC' || s0 === 'USDBC') { curU = p.token0.amount + (p.currentPrice ? p.token1.amount / p.currentPrice : 0); feU = p.token0.fees + (p.currentPrice ? p.token1.fees / p.currentPrice : 0); }
       else if (s1 === 'USDC' || s1 === 'USDBC') { curU = p.token1.amount + p.token0.amount * p.currentPrice; feU = p.token1.fees + p.token0.fees * p.currentPrice; }
-      if (p.source === 'staked' && (p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || ''))) feU = 0;
+      if ((p.npmKind === 'slipstream' || /slipstream/i.test(p.npmName || '')) && p.source === 'staked') feU = 0;
+      if (!isFinite(feU) || feU < 0 || (p.modal && feU > p.modal)) feU = 0;
       totalCur += curU;
       totalFees += feU;
       if (typeof p.aeroEarned === 'number') totalAero += p.aeroEarned * aeroPriceUsd;
