@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>JSM Multi-Pair LP Dashboard</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -3197,6 +3198,7 @@ async function plRefreshEntry(addedAt, silent) {
       inRange: p.inRange,
       rangeLower: (typeof p.rangeLower === 'number') ? p.rangeLower : e.rangeLower,
       rangeUpper: (typeof p.rangeUpper === 'number') ? p.rangeUpper : e.rangeUpper,
+      currentPrice: (typeof p.currentPrice === 'number') ? p.currentPrice : e.currentPrice,
       mintTimestamp: p.originalDeposit?.mintTimestamp || e.mintTimestamp,
       lastRefreshed: Date.now()
     };
@@ -3252,25 +3254,62 @@ function plFmtPx(v) {
 }
 
 // Orientasi pair selalu jadi VOLATILE/USDC (harga token dalam USDC).
-// Kalau pool aslinya USDC/ALTS, label + range di-flip (price = 1/price).
-function plOrientPair(pairStr, rangeLower, rangeUpper) {
+// Kalau pool aslinya USDC/ALTS, label + range + harga di-flip (price = 1/price).
+function plOrientPair(pairStr, rangeLower, rangeUpper, currentPrice) {
   const parts = (pairStr || '').split('/');
   const t0 = (parts[0] || '').toUpperCase();
   const t1 = (parts[1] || '').toUpperCase();
   const isUSDC = s => s === 'USDC' || s === 'USDBC';
   const hasRange = typeof rangeLower === 'number' && typeof rangeUpper === 'number' && rangeLower > 0 && rangeUpper > 0;
+  const hasCur = typeof currentPrice === 'number' && currentPrice > 0;
   if (isUSDC(t0) && !isUSDC(t1)) {
     return {
       label: `${parts[1]}/${parts[0]}`,
       lo: hasRange ? 1 / rangeUpper : null,
-      hi: hasRange ? 1 / rangeLower : null
+      hi: hasRange ? 1 / rangeLower : null,
+      cur: hasCur ? 1 / currentPrice : null
     };
   }
   return {
     label: pairStr || '—',
     lo: hasRange ? rangeLower : null,
-    hi: hasRange ? rangeUpper : null
+    hi: hasRange ? rangeUpper : null,
+    cur: hasCur ? currentPrice : null
   };
+}
+
+// Range bar ala vfat: track Pa→Pb, marker harga sekarang, jarak ke tiap sisi.
+function plRangeBar(o) {
+  if (o.lo === null || o.hi === null) return '<span style="color:#6b7280">—</span>';
+  const span = o.hi - o.lo;
+  if (o.cur === null || !(span > 0)) {
+    return `<span style="color:#9ca3af; font-size:10px; font-family:monospace">↑ ${plFmtPx(o.hi)}<br>↓ ${plFmtPx(o.lo)}<br><span style="color:#6b7280; font-size:9px">refresh buat bar</span></span>`;
+  }
+  const posPct = (o.cur - o.lo) / span * 100;
+  const clamped = Math.max(2, Math.min(98, posPct));
+  const outLow = o.cur <= o.lo;
+  const outHigh = o.cur >= o.hi;
+  const inRange = !outLow && !outHigh;
+  const roomDown = (o.cur - o.lo) / o.cur * 100;
+  const roomUp = (o.hi - o.cur) / o.cur * 100;
+  const trackBg = inRange ? '#15301d' : '#3a1d1d';
+  const trackBd = inRange ? '#2f6b44' : '#7f3a3a';
+  const mk = inRange ? '#f4f9ff' : '#f87171';
+  const leftTxt = outLow ? 'OUT ▼' : `▼ ${roomDown.toFixed(1)}%`;
+  const rightTxt = outHigh ? 'OUT ▲' : `▲ ${roomUp.toFixed(1)}%`;
+  return `<div style="width:170px; margin-left:auto; font-family:monospace">
+    <div style="position:relative; height:8px; background:${trackBg}; border:1px solid ${trackBd}; border-radius:5px">
+      <div style="position:absolute; left:${clamped}%; top:-3px; width:3px; height:12px; background:${mk}; border-radius:1px; transform:translateX(-1.5px)"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:9px; color:#6b7280; margin-top:3px">
+      <span>${plFmtPx(o.lo)}</span><span>${plFmtPx(o.hi)}</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:9.5px; margin-top:1px">
+      <span style="color:#f87171">${leftTxt}</span>
+      <span style="color:#e8edf3; font-weight:700; font-size:11px">${plFmtPx(o.cur)}</span>
+      <span style="color:#6ee7b7">${rightTxt}</span>
+    </div>
+  </div>`;
 }
 
 function plFmtDate(ts) {
@@ -3313,7 +3352,7 @@ function plRenderHistory() {
 
   // Helper render 1 baris tabel — dipakai buat tabel ACTIVE maupun CLOSED.
   const renderRow = (e) => {
-    const oriented = plOrientPair(e.pair, e.rangeLower, e.rangeUpper);
+    const oriented = plOrientPair(e.pair, e.rangeLower, e.rangeUpper, e.currentPrice);
     const poolPnl = (typeof e.pnlUsd === 'number') ? e.pnlUsd : 0;
     const hedge = (typeof e.hedgePnl === 'number') ? e.hedgePnl : 0;
     const net = poolPnl + hedge;
@@ -3338,7 +3377,7 @@ function plRenderHistory() {
         <td style="padding:10px 8px; font-size:11px; color:#9ca3af; white-space:nowrap">${plFmtDate(e.addedAt)}${e.lastRefreshed ? `<br><span style="font-size:9px; color:#38bdf8">↻ ${plFormatAge(Math.floor(e.lastRefreshed/1000))} lalu</span>` : ''}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-weight:600">${oriented.label} ${e.chain === 'optimism' ? '<span style="color:#fb7185; font-size:9px; background:#1a0a0a; padding:1px 5px; border-radius:3px">OP</span>' : e.chain === 'arbitrum' ? '<span style="color:#60a5fa; font-size:9px; background:#0a1027; padding:1px 5px; border-radius:3px">ARB</span>' : e.chain === 'base' ? '<span style="color:#38bdf8; font-size:9px; background:#0a1a1f; padding:1px 5px; border-radius:3px">BASE</span>' : ''}<br><span style="font-size:10px; color:#6b7280">#${e.tokenId} · ${poolShort}</span></td>
         <td style="padding:10px 8px; font-size:11px; color:${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '#6b7280' : e.source === 'staked' ? '#a78bfa' : (e.source && e.source.startsWith('masterchef')) ? '#fbbf24' : '#94a3b8'}; white-space:nowrap">${e.source === 'closed-tx' ? '🔒 Closed' : e.source === 'closed-manual' ? '🔒 Closed (manual)' : e.source === 'staked' ? '🏦 Gauge' : (e.source && e.source.startsWith('masterchef')) ? '🥞 MasterChef' : '👛 Wallet'}<br><span style="color:${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '#6b7280' : e.inRange ? '#6ee7b7' : '#f87171'}; font-size:10px">${(e.source === 'closed-tx' || e.source === 'closed-manual') ? '● EXITED' : e.inRange ? '● IN' : '● OUT'}</span></td>
-        <td style="padding:10px 8px; font-size:13px; font-family:monospace; text-align:right; white-space:nowrap; line-height:1.65">${(oriented.lo !== null && oriented.hi !== null) ? `<span style="color:#38bdf8; font-size:9px">▲</span> <span style="color:#e8edf3; font-weight:700">${plFmtPx(oriented.hi)}</span><br><span style="color:#f87171; font-size:9px">▼</span> <span style="color:#aab4c2; font-weight:600">${plFmtPx(oriented.lo)}</span>` : '<span style="color:#6b7280">—</span>'}</td>
+        <td style="padding:10px 8px">${plRangeBar(oriented)}</td>
         <td style="padding:10px 8px; font-size:12px; color:#fbbf24; font-family:monospace; text-align:right">${typeof e.modal === 'number' ? '$'+e.modal.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:#d0d8e0; font-family:monospace; text-align:right">${typeof e.curUsd === 'number' ? '$'+e.curUsd.toFixed(2) : '—'}</td>
         <td style="padding:10px 8px; font-size:12px; color:${cPool}; font-family:monospace; text-align:right">${sgn(poolPnl)}$${poolPnl.toFixed(2)}</td>
@@ -3383,7 +3422,7 @@ function plRenderHistory() {
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Dicatat</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Pair / NFT / Pool</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:left">Status</th>
-              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Range Pa–Pb</th>
+              <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Range / posisi</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Modal</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Value LP</th>
               <th style="padding:8px; font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em; text-align:right">Pool PnL</th>
@@ -3923,7 +3962,7 @@ function plRenderPositions(data) {
             <div style="font-size:10px; color:#9ca3af">Harga sekarang</div>
             <div style="font-family:monospace; font-size:13px; color:#d0d8e0">${p.currentPrice ? p.currentPrice.toFixed(p.currentPrice < 1 ? 6 : 4) : '—'}</div>
           </div>
-          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, rewardSymbol, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange, rangeLower:p.rangeLower, rangeUpper:p.rangeUpper}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
+          <button onclick='plAddToHistory(${JSON.stringify({tokenId:p.tokenId, pair:p.token0.symbol+"/"+p.token1.symbol, poolAddress:data.poolAddress, chain:data.chain, npmName:p.npmName, source:p.source, modal, curUsd, feesUsd, rewardSymbol, aeroAmt, aeroUsd, pnlUsd, pnlPct, mintBlock:p.originalDeposit?.mintBlock, mintTimestamp:p.originalDeposit?.mintTimestamp, inRange:p.inRange, rangeLower:p.rangeLower, rangeUpper:p.rangeUpper, currentPrice:p.currentPrice}).replace(/'/g,"&apos;")})' style="background:#6ee7b7; color:#064e3b; border:none; padding:8px 14px; border-radius:5px; cursor:pointer; font-weight:700; font-size:12px; white-space:nowrap">+ Tambah ke History</button>
         </div>
       </div>
 
