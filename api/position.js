@@ -260,10 +260,20 @@ async function fetchPriceByContract(platform, contractAddr) {
   return null;
 }
 
+// Cache RPC terakhir yg sukses per-chain — biar gak bayar timeout berulang
+// kalau RPC pertama di daftar lagi hang. Self-healing: kalau yg di-cache ikut
+// busuk, call berikutnya bakal update ke RPC sehat yg baru.
+const _lastGoodRpc = {};
+
 function getRpcs() {
   const ctx = chainCtx.getStore();
   const key = (ctx && ctx.chainKey) || 'base';
-  return CHAINS[key].rpcs;
+  const list = CHAINS[key].rpcs;
+  const good = _lastGoodRpc[key];
+  if (good && list.includes(good)) {
+    return [good, ...list.filter(u => u !== good)];
+  }
+  return list;
 }
 
 function getNpms() {
@@ -325,14 +335,23 @@ async function rpcCall(method, params, opts = {}) {
   // Some methods (eth_getTransactionReceipt) return null kalau RPC node-nya gak punya tx itu —
   // bukan error, tapi means "try next RPC". Set rejectNull = true untuk auto-retry.
   const rejectNull = opts.rejectNull || method === 'eth_getTransactionReceipt' || method === 'eth_getTransactionByHash';
+  const ctx = chainCtx.getStore();
+  const chainKey = (ctx && ctx.chainKey) || 'base';
   let lastErr;
   for (const url of getRpcs()) {
+    // Timeout per-RPC: RPC yg hang (nerima koneksi tapi gak pernah jawab) di-abort
+    // 10 detik, bukan ditungguin selamanya. Tanpa ini, satu RPC busuk bikin
+    // seluruh function stuck sampai kena limit Vercel.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 10000);
     try {
       const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        signal: ac.signal
       });
+      clearTimeout(timer);
       if (!r.ok) { lastErr = new Error(`HTTP ${r.status} @ ${url}`); continue; }
       const data = await r.json();
       if (data.error) {
@@ -347,8 +366,10 @@ async function rpcCall(method, params, opts = {}) {
         lastErr = new Error(`null result @ ${url}`);
         continue;
       }
+      _lastGoodRpc[chainKey] = url; // inget RPC sehat → dipakai duluan call berikutnya
       return data.result;
     } catch (e) {
+      clearTimeout(timer);
       lastErr = e;
     }
   }
@@ -375,42 +396,82 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
 
   // Chunked backward scan: 18k blok per chunk (~10 jam di Base @ 2s/block).
   // Max 10 chunks = ~100 jam (~4 hari). Cukup buat posisi yg masih hidup.
-  // Stop early: setelah ketemu event, scan 1 chunk lagi ke belakang lalu berhenti
-  // (untuk catch follow-up mints yg deket waktu deposit awal).
   const CHUNK = 18000;
   const MAX_CHUNKS = 10;
   let logs = [];
   let foundAt = -1;
+  let scanComplete = true;        // false kalau ada chunk gagal walau udah retry
+  const failedRanges = [];
+
+  // eth_getLogs dengan retry (3x, backoff 400/800ms). Tanpa retry, RPC flake
+  // bisa diam-diam nge-drop mint event → usdValue undercount → modal salah.
+  async function getLogsRetry(fromBlk, toBlk) {
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await rpcCall('eth_getLogs', [{
+          address: npmAddress,
+          topics: [eventTopic, tokenIdTopic],
+          fromBlock: '0x' + fromBlk.toString(16),
+          toBlock: '0x' + toBlk.toString(16)
+        }]);
+      } catch (e) {
+        lastErr = e;
+        if (attempt < 2) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+    throw lastErr;
+  }
 
   for (let c = 0; c < MAX_CHUNKS; c++) {
     const toBlk = latest - (c * CHUNK);
     const fromBlk = Math.max(0, toBlk - CHUNK + 1);
     try {
-      const chunk = await rpcCall('eth_getLogs', [{
-        address: npmAddress,
-        topics: [eventTopic, tokenIdTopic],
-        fromBlock: '0x' + fromBlk.toString(16),
-        toBlock: '0x' + toBlk.toString(16)
-      }]);
+      const chunk = await getLogsRetry(fromBlk, toBlk);
       if (chunk && chunk.length) {
         logs = chunk.concat(logs); // older first after concat
         if (foundAt < 0) foundAt = c;
       } else if (foundAt >= 0 && c > foundAt) {
-        // Sudah ketemu di chunk sebelumnya, dan chunk ini kosong → kemungkinan udah lewat semua mint events
+        // Sudah ketemu di chunk sebelumnya, dan chunk ini kosong → udah lewat semua mint events
         break;
       }
     } catch (e) {
-      // RPC error pada chunk ini — skip, lanjut chunk berikutnya
+      // Chunk gagal walau udah retry → scan gak lengkap. Mint event bisa ada di sini,
+      // jadi tandai incomplete supaya caller TOLAK hasil (jangan nimpa modal lama).
+      scanComplete = false;
+      failedRanges.push(`logs ${fromBlk}-${toBlk}`);
     }
     if (fromBlk === 0) break;
   }
 
-  if (!logs.length) return null;
+  if (!logs.length) {
+    // Gak ada log: kalau scan lengkap → emang gak ada mint event (null).
+    // Kalau scan-nya gagal → "gak ketauan", jangan dianggap nol.
+    return scanComplete ? null : { complete: false, error: 'Scan log RPC gagal — hasil gak lengkap', failedRanges };
+  }
 
   let totalUsd = 0, totalAmount0 = 0n, totalAmount1 = 0n;
   let mintBlock = null;
   const s0 = (token0Info.symbol || '').toUpperCase();
   const s1 = (token1Info.symbol || '').toUpperCase();
+
+  // Harga pool historis di blok tertentu, dengan retry.
+  async function priceAtBlock(blockNumber) {
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const slot0Hex = (await ethCallAtBlock(poolAddress, '0x3850c7bd', blockNumber)).replace('0x', '');
+        const sqrtPriceX96 = hex2BN(slot0Hex.slice(0, 64));
+        const Q96 = BigInt(2) ** BigInt(96);
+        const sqrtFloat = Number(sqrtPriceX96) / Number(Q96);
+        return sqrtFloat * sqrtFloat * Math.pow(10, token0Info.decimals - token1Info.decimals);
+      } catch (e) {
+        lastErr = e;
+        if (attempt < 2) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+    throw lastErr;
+  }
 
   for (const log of logs) {
     const data = log.data.replace('0x', '');
@@ -422,12 +483,14 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
     const amt0H = Number(amount0) / Math.pow(10, token0Info.decimals);
     const amt1H = Number(amount1) / Math.pow(10, token1Info.decimals);
 
-    // Pool price at this block
-    const slot0Hex = (await ethCallAtBlock(poolAddress, '0x3850c7bd', log.blockNumber)).replace('0x', '');
-    const sqrtPriceX96 = hex2BN(slot0Hex.slice(0, 64));
-    const Q96 = BigInt(2) ** BigInt(96);
-    const sqrtFloat = Number(sqrtPriceX96) / Number(Q96);
-    const priceRatio = sqrtFloat * sqrtFloat * Math.pow(10, token0Info.decimals - token1Info.decimals);
+    // Pool price at this block (retry; kalau tetap gagal → tandai incomplete)
+    let priceRatio = 0;
+    try {
+      priceRatio = await priceAtBlock(log.blockNumber);
+    } catch (e) {
+      scanComplete = false;
+      failedRanges.push(`price@${parseInt(log.blockNumber, 16)}`);
+    }
 
     let depositUsd = 0;
     if (s0 === 'USDC' || s0 === 'USDBC') depositUsd = amt0H + (priceRatio ? amt1H / priceRatio : 0);
@@ -451,7 +514,9 @@ async function getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, 
     usdValue: totalUsd,
     mintBlock,
     mintTimestamp,
-    mintCount: logs.length
+    mintCount: logs.length,
+    complete: scanComplete,
+    ...(failedRanges.length ? { failedRanges } : {})
   };
 }
 
@@ -531,10 +596,15 @@ async function readTickInfo(poolAddress, tick) {
   const data = '0xf30dba93' + tickHex;
   const result = await ethCall(poolAddress, data);
   const hex = result.replace('0x', '');
-  // (liquidityGross uint128, liquidityNet int128, feeGrowthOutside0 uint256, feeGrowthOutside1 uint256, ...)
+  // Uniswap V3 / PancakeSwap V3 ticks() balikin 8 field: feeGrowthOutside0/1 di slot 2/3.
+  // Aerodrome/Velodrome SlipStream ticks() balikin 10 field — ada stakedLiquidityNet (slot 2) +
+  // rewardGrowthOutside ekstra → feeGrowthOutside0/1 geser ke slot 3/4. Detect dari panjang return data.
+  const isSlipstream = hex.length > 8 * 64;
+  const fg0 = isSlipstream ? 3 : 2;
+  const fg1 = fg0 + 1;
   return {
-    feeGrowthOutside0X128: hex2BN(hex.slice(2*64, 3*64)),
-    feeGrowthOutside1X128: hex2BN(hex.slice(3*64, 4*64))
+    feeGrowthOutside0X128: hex2BN(hex.slice(fg0 * 64, (fg0 + 1) * 64)),
+    feeGrowthOutside1X128: hex2BN(hex.slice(fg1 * 64, (fg1 + 1) * 64))
   };
 }
 
@@ -701,13 +771,25 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
   // (0) Manual token IDs — untuk kasus vfat zap (NFT di-mint langsung ke proxy, gak pernah di wallet user)
   const hasManual = Array.isArray(manualTokenIds) && manualTokenIds.length > 0;
   if (hasManual) {
+    // NPM list = hardcoded getNpms() + NPM canonical hasil resolve dari gauge.
+    // Posisi yg di-stake (mis. Velodrome/Aerodrome SlipStream) NPM-nya gak selalu
+    // ada di daftar hardcoded — tanpa ini, refresh fast-path gak nemu NFT-nya.
+    const manualNpmList = getNpms().slice();
+    if (gaugeAddress) {
+      try {
+        const gaugeNpm = await resolveNpmFromGauge(gaugeAddress);
+        if (gaugeNpm && !manualNpmList.some(n => n.address.toLowerCase() === gaugeNpm.toLowerCase())) {
+          manualNpmList.push({ name: 'Gauge NPM', address: gaugeNpm, kind: 'slipstream' });
+        }
+      } catch { /* gauge NPM resolve gagal — lanjut pakai hardcoded aja */ }
+    }
     for (const tid of manualTokenIds) {
       const tokenId = String(tid).trim();
       if (!tokenId || !/^\d+$/.test(tokenId)) continue;
       // TokenId counter beda per NPM contract — cek SEMUA NPM, jangan break first.
       // tryMatch akan filter mana yg sesuai pool (token0/token1/fee match).
       const foundInNpms = [];
-      for (const npm of getNpms()) {
+      for (const npm of manualNpmList) {
         try {
           const r = await ethCall(npm.address, '0x6352211e' + pad(toHex(tokenId)));
           const ownerAddr = ('0x' + r.replace('0x','').slice(-40)).toLowerCase();
@@ -727,6 +809,7 @@ async function findPositionsByPool(walletAddress, poolAddress, poolMeta, gaugeAd
         const isMasterchef = masterchefs.find(mc => mc.address.toLowerCase() === ownerAddr);
         if (isMasterchef) source = 'masterchef:' + isMasterchef.name.split(' ')[0];
         else if (ownerAddr === walletAddress.toLowerCase()) source = 'wallet';
+        else if (gaugeAddress && ownerAddr === gaugeAddress.toLowerCase()) source = 'staked';
         else source = 'manual(owner:' + ownerAddr.slice(0,6) + '...' + ownerAddr.slice(-4) + ')';
         diag.manualTokenIds.push({ tokenId, npm: npm.name, owner: ownerAddr, source });
         await tryMatch(npm, tokenId, source);
@@ -836,7 +919,7 @@ async function readErc20Info(addr) {
 }
 
 // ── Full position read (parallelized) — dipakai untuk single tokenId atau batch findByPool ──
-async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, walletAddress, prefetchedPosition) {
+async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, walletAddress, prefetchedPosition, skipDeposit) {
   const position = prefetchedPosition || await readPosition(npmAddress, tokenId);
   const [slot0, feeGrowthGlobals, tickLowerInfo, tickUpperInfo, token0Info, token1Info] = await Promise.all([
     readSlot0(poolAddress),
@@ -861,11 +944,16 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
   const priceLower = Math.pow(1.0001, position.tickLower) * Math.pow(10, token0Info.decimals - token1Info.decimals);
   const priceUpper = Math.pow(1.0001, position.tickUpper) * Math.pow(10, token0Info.decimals - token1Info.decimals);
 
+  // getOriginalDeposit = chunked eth_getLogs scan — operasi paling berat & paling sering
+  // di-throttle/ditolak public RPC (terutama Optimism). Untuk refresh, frontend udah
+  // punya modal tersimpan, jadi di-skip biar gak timeout. Cuma dipakai pas search awal.
   let originalDeposit = null;
-  try {
-    originalDeposit = await getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, token1Info);
-  } catch (e) {
-    originalDeposit = { error: e.message };
+  if (!skipDeposit) {
+    try {
+      originalDeposit = await getOriginalDeposit(npmAddress, poolAddress, tokenId, token0Info, token1Info);
+    } catch (e) {
+      originalDeposit = { error: e.message };
+    }
   }
 
   let aeroEarned = null;
@@ -980,7 +1068,7 @@ module.exports = async function handler(req, res) {
     let s=''; req.on('data', c => s += c); req.on('end', () => { try { r(JSON.parse(s)); } catch { r({}); } });
   });
 
-  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress, chain, manualTokenIds, basescanKey, lookbackDays, txHash } = body;
+  const { mode, tokenId, npmAddress, poolAddress, gaugeAddress, walletAddress, chain, manualTokenIds, basescanKey, lookbackDays, txHash, skipDeposit } = body;
   const chainKey = (chain && CHAINS[chain]) ? chain : 'base';
 
   return chainCtx.run({ chainKey }, async () => {
@@ -1091,6 +1179,24 @@ module.exports = async function handler(req, res) {
           });
         }
 
+        // Resolve pool address(es): pool itu sendiri yang emit Mint (open) / Burn (close).
+        // Mint/Burn topic[1] = owner = NPM. pool = log.address. Universal: Uniswap V3 / Aerodrome / Velodrome SlipStream / PancakeSwap V3 / Camelot.
+        const MINT_TOPIC = '0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bae';
+        const BURN_TOPIC = '0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c';
+        const poolByNpm = {};
+        const allPoolSet = new Set();
+        for (const log of receipt.logs) {
+          const t0 = log.topics[0];
+          if (t0 !== MINT_TOPIC && t0 !== BURN_TOPIC) continue;
+          if (!log.topics[1]) continue;
+          const owner = ('0x' + log.topics[1].slice(-40)).toLowerCase();
+          const pool = (log.address || '').toLowerCase();
+          if (!pool) continue;
+          if (npmAddrs.includes(owner) && !poolByNpm[owner]) poolByNpm[owner] = pool;
+          allPoolSet.add(pool);
+        }
+        const singlePool = allPoolSet.size === 1 ? [...allPoolSet][0] : null;
+
         // For each tokenId, try positions() to get pool info (token0, token1, fee/tickSpacing)
         const results = [];
         for (const tid of tokenIdSet) {
@@ -1107,6 +1213,7 @@ module.exports = async function handler(req, res) {
             tokenId: tid,
             npmAddress: npmHit,
             npmName: npmHit ? npmByAddr[npmHit]?.name : null,
+            poolAddress: (npmHit && poolByNpm[npmHit]) || singlePool || null,
             events: evs,
             position: posInfo ? {
               token0: posInfo.token0, token1: posInfo.token1, feeOrSpacing: posInfo.fee,
@@ -1184,7 +1291,7 @@ module.exports = async function handler(req, res) {
         const positions = [];
         for (const m of matches) {
           try {
-            const inner = await readFullPosition(m.npmAddress, m.tokenId, poolAddress, effectiveGauge, walletAddress, m.position);
+            const inner = await readFullPosition(m.npmAddress, m.tokenId, poolAddress, effectiveGauge, walletAddress, m.position, skipDeposit);
             positions.push({ ...inner, chain: chainKey, npmName: m.npmName, npmKind: m.npmKind, source: m.source });
           } catch (e) {
             positions.push({ ok: false, chain: chainKey, tokenId: m.tokenId, npmAddress: m.npmAddress, error: e.message, source: m.source });

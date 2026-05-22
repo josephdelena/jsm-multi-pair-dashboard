@@ -2717,7 +2717,7 @@ async function syncNft(key) {
     p.chainData = { ...data, syncedAt: Date.now() };
     // Auto-lock entry USD value: prefer on-chain originalDeposit if available, else current value
     if (!p.nftEntryValueUsd) {
-      if (data.originalDeposit && typeof data.originalDeposit.usdValue === 'number' && data.originalDeposit.usdValue > 0) {
+      if (data.originalDeposit && data.originalDeposit.complete !== false && typeof data.originalDeposit.usdValue === 'number' && data.originalDeposit.usdValue > 0) {
         p.nftEntryValueUsd = data.originalDeposit.usdValue;
         p.nftEntryAt = data.originalDeposit.mintBlock ? Date.now() : Date.now();
       } else {
@@ -2941,7 +2941,7 @@ async function silentResyncChain(key) {
     const data = await res.json();
     if (data.error) return;
     p.chainData = { ...data, syncedAt: Date.now() };
-    if (!p.nftEntryValueUsd && data.originalDeposit && typeof data.originalDeposit.usdValue === 'number' && data.originalDeposit.usdValue > 0) {
+    if (!p.nftEntryValueUsd && data.originalDeposit && data.originalDeposit.complete !== false && typeof data.originalDeposit.usdValue === 'number' && data.originalDeposit.usdValue > 0) {
       p.nftEntryValueUsd = data.originalDeposit.usdValue;
       p.nftEntryAt = Date.now();
     }
@@ -3183,7 +3183,9 @@ async function plRefreshEntry(addedAt, silent) {
     const rewardSymbol = p.rewardSymbol || e.rewardSymbol || 'AERO';
     const aeroAmt = (typeof p.rewardAmount === 'number') ? p.rewardAmount : 0;
     const aeroUsd = (typeof p.rewardUsd === 'number') ? p.rewardUsd : 0;
-    const modal = (p.originalDeposit && typeof p.originalDeposit.usdValue === 'number') ? p.originalDeposit.usdValue : e.modal;
+    // Modal masuk di-LOCK: di-grab sekali pas entry ke history (saat search + "Tambah ke History"),
+    // abis itu gak pernah di-recompute. Refresh cuma update harga/PnL/fee/emissions, modal beku.
+    const modal = e.modal;
     if (!isFinite(feesUsd) || feesUsd < 0 || (modal && feesUsd > modal)) feesUsd = 0; // sanity: buang angka ngaco (modal udah ke-define)
     const pnlUsd = modal ? (curUsd + feesUsd + aeroUsd - modal) : null;
     const pnlPct = modal ? (pnlUsd / modal * 100) : null;
@@ -3876,7 +3878,7 @@ function plRenderPositions(data) {
     }
 
     // Modal entry USD (dari on-chain mint event)
-    const modal = (p.originalDeposit && typeof p.originalDeposit.usdValue === 'number') ? p.originalDeposit.usdValue : null;
+    const modal = (p.originalDeposit && p.originalDeposit.complete !== false && typeof p.originalDeposit.usdValue === 'number') ? p.originalDeposit.usdValue : null;
 
     // Current value USD: amount × price. Tahu salah satu token USDC?
     const s0 = (p.token0.symbol || '').toUpperCase();
@@ -3929,9 +3931,10 @@ function plRenderPositions(data) {
         <!-- KIRI: Modal pas masuk -->
         <div style="background:#0d1219; border:1px solid #1f2638; border-radius:6px; padding:14px">
           <div style="font-size:10px; color:#9ca3af; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:8px">💰 Modal Pas Masuk Pool</div>
-          <div style="font-size:22px; font-weight:700; color:#fbbf24; font-family:monospace">${modal !== null ? '$'+modal.toFixed(2) : '— (gak ketemu mint event)'}</div>
+          <div style="font-size:22px; font-weight:700; color:#fbbf24; font-family:monospace">${modal !== null ? '$'+modal.toFixed(2) : (p.originalDeposit && p.originalDeposit.complete === false ? '— (scan RPC gak lengkap)' : '— (gak ketemu mint event)')}</div>
           ${p.originalDeposit && p.originalDeposit.mintBlock ? `<div style="font-size:10px; color:#6b7280; margin-top:4px">Mint block ${p.originalDeposit.mintBlock} · ${p.originalDeposit.mintCount || 1} event${p.originalDeposit.mintTimestamp ? ` · <span style="color:#9ca3af">⏱ Umur: ${plFormatAge(p.originalDeposit.mintTimestamp)}</span>` : ''}</div>` : ''}
           ${p.originalDeposit && p.originalDeposit.error ? `<div style="font-size:10px; color:#f87171; margin-top:4px">⚠ ${p.originalDeposit.error}</div>` : ''}
+          ${p.originalDeposit && p.originalDeposit.complete === false && !p.originalDeposit.error ? `<div style="font-size:10px; color:#fbbf24; margin-top:4px">⚠ Scan log RPC gak lengkap — angka modal bisa keliru. Cari lagi pas RPC stabil.</div>` : ''}
         </div>
         <!-- KANAN: PnL -->
         <div style="background:#0d1219; border:1px solid #1f2638; border-radius:6px; padding:14px">
@@ -3968,7 +3971,7 @@ function plRenderPositions(data) {
     let totalModal = 0, totalCur = 0, totalFees = 0, totalAero = 0;
     for (const p of data.positions) {
       if (!p.ok) continue;
-      if (p.originalDeposit && typeof p.originalDeposit.usdValue === 'number') totalModal += p.originalDeposit.usdValue;
+      if (p.originalDeposit && p.originalDeposit.complete !== false && typeof p.originalDeposit.usdValue === 'number') totalModal += p.originalDeposit.usdValue;
       const s0 = (p.token0.symbol || '').toUpperCase();
       const s1 = (p.token1.symbol || '').toUpperCase();
       let curU = 0, feU = 0;
