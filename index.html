@@ -3339,9 +3339,9 @@ function plRangeBar(o) {
   const inRange = !outLow && !outHigh;
   const roomDown = (o.cur - o.lo) / o.cur * 100;
   const roomUp = (o.hi - o.cur) / o.cur * 100;
-  const trackBg = inRange ? '#15301d' : '#3a1d1d';
-  const trackBd = inRange ? '#2f6b44' : '#7f3a3a';
-  const mk = inRange ? '#f4f9ff' : '#f87171';
+  const trackBg = inRange ? '#15301d' : (outHigh ? '#23302a' : '#302323');
+  const trackBd = inRange ? '#2f6b44' : (outHigh ? '#52705f' : '#705252');
+  const mk = inRange ? '#f4f9ff' : (outHigh ? '#9fc7b3' : '#c79f9f');
   const leftTxt = outLow ? 'OUT ▼' : `▼ ${roomDown.toFixed(1)}%`;
   const rightTxt = outHigh ? 'OUT ▲' : `▲ ${roomUp.toFixed(1)}%`;
   // Marker entry (titik posisi pas baru lahir) — patokan setting bener/salah.
