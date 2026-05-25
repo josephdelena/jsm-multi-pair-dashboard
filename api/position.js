@@ -668,15 +668,18 @@ function computeUncollectedFees(position, slot0, feeGrowthGlobals, tickLowerInfo
   const feeGrowthInside1X128 = (feeGrowthGlobal1X128 - feeGrowthBelow1 - feeGrowthAbove1 + MASK + MASK) % MASK;
 
   // delta × liquidity / 2^128
-  // If feeGrowthInside < feeGrowthInsideLast (e.g. fees already auto-collected by gauge),
-  // treat delta as 0 instead of wrapping to huge number.
+  // Uniswap V3 pakai unchecked subtraction (mod 2^256) — delta selalu benar walau
+  // feeGrowthInside numerik-nya lebih kecil dari snapshot. Itu NORMAL: tiap tick
+  // crossing nge-flip feeGrowthOutside, bikin feeGrowthInside "wrap". Perbandingan
+  // `>=` mentah salah nge-nol-in fee tiap ada crossing.
+  // Yang BENAR perlu di-nol cuma kasus fee udah ke-collect (snapshot lebih maju):
+  // hasil mod-subtraction jadi raksasa (> 2^255) → itu yg di-clamp.
   const Q128 = BigInt(1) << BigInt(128);
-  const delta0 = feeGrowthInside0X128 >= feeGrowthInside0LastX128
-    ? (feeGrowthInside0X128 - feeGrowthInside0LastX128)
-    : 0n;
-  const delta1 = feeGrowthInside1X128 >= feeGrowthInside1LastX128
-    ? (feeGrowthInside1X128 - feeGrowthInside1LastX128)
-    : 0n;
+  const HALF = MASK >> 1n; // 2^255
+  const raw0 = (feeGrowthInside0X128 - feeGrowthInside0LastX128 + MASK) % MASK;
+  const raw1 = (feeGrowthInside1X128 - feeGrowthInside1LastX128 + MASK) % MASK;
+  const delta0 = raw0 < HALF ? raw0 : 0n;
+  const delta1 = raw1 < HALF ? raw1 : 0n;
 
   const fees0 = (delta0 * liquidity) / Q128 + tokensOwed0;
   const fees1 = (delta1 * liquidity) / Q128 + tokensOwed1;
