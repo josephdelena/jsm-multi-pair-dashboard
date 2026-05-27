@@ -1053,7 +1053,7 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
       }
       // Kalau semua revert atau kita cuma dapet rewards(id) yg checkpointed (sering 0),
       // resolve depositor asli via Transfer log lalu retry earned(addr,id).
-      const earnedZero = earnedResult && /^0x0+$/.test(earnedResult.replace('0x',''));
+      const earnedZero = earnedResult && /^0+$/.test(earnedResult.replace('0x',''));
       if (earnedResult === null || (_emDiag.usedSel === 'rewards(id)' && earnedZero)) {
         try {
           _emDiag.depositorResolved = await resolveDepositorFromTransferLog(npmAddress, tokenId, gaugeAddress);
