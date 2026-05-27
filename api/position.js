@@ -996,13 +996,21 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
     } catch (e) { aeroEarned = { error: e.message }; }
   } else if (gaugeAddress) {
     try {
-      let earnedData;
+      // Build attempt list — beberapa gauge (CL1 baru, NFT yang di-deposit via router)
+      // revert "NA" untuk earned(address,uint256) karena wallet bukan depositor asli.
+      // Coba variant address dulu (kalau wallet ada), fallback ke earned(uint256) yg pakai mapping internal.
+      const attempts = [];
       if (walletAddress) {
-        earnedData = '0x3e491d47' + pad(walletAddress.replace('0x','').toLowerCase()) + pad(toHex(tokenId));
-      } else {
-        earnedData = '0x4d6ed8c4' + pad(toHex(tokenId));
+        attempts.push('0x3e491d47' + pad(walletAddress.replace('0x','').toLowerCase()) + pad(toHex(tokenId)));
       }
-      const earnedResult = await ethCall(gaugeAddress, earnedData);
+      attempts.push('0x4d6ed8c4' + pad(toHex(tokenId)));
+      let earnedResult = null;
+      let lastErr = null;
+      for (const earnedData of attempts) {
+        try { earnedResult = await ethCall(gaugeAddress, earnedData); break; }
+        catch (e) { lastErr = e; }
+      }
+      if (earnedResult === null) throw (lastErr || new Error('earned() semua variant revert'));
       const earnedWei = hex2BN(earnedResult);
       aeroEarned = Number(earnedWei) / 1e18;
       // Lookup reward token via gauge.rewardToken() (paling akurat).
