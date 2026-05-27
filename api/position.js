@@ -996,21 +996,26 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
     } catch (e) { aeroEarned = { error: e.message }; }
   } else if (gaugeAddress) {
     try {
-      // Build attempt list — beberapa gauge (CL1 baru, NFT yang di-deposit via router)
-      // revert "NA" untuk earned(address,uint256) karena wallet bukan depositor asli.
-      // Coba variant address dulu (kalau wallet ada), fallback ke earned(uint256) yg pakai mapping internal.
+      // Build attempt list — gauge implementations beda-beda:
+      // 1) earned(address,uint256) — Velo/Aero standard, revert "NA" kalau wallet bukan depositor asli
+      // 2) earned(uint256) — variant tokenId-only
+      // 3) rewards(uint256) — public mapping getter di Aerodrome SlipStream, never revert (return 0)
+      //    Note: rewards() cuma kasih checkpointed accrual; mungkin lebih kecil dari UI realtime,
+      //    tapi tetap lebih baik daripada blank "—"
       const attempts = [];
       if (walletAddress) {
-        attempts.push('0x3e491d47' + pad(walletAddress.replace('0x','').toLowerCase()) + pad(toHex(tokenId)));
+        attempts.push({ sel: 'earned(addr,id)', data: '0x3e491d47' + pad(walletAddress.replace('0x','').toLowerCase()) + pad(toHex(tokenId)) });
       }
-      attempts.push('0x4d6ed8c4' + pad(toHex(tokenId)));
+      attempts.push({ sel: 'earned(id)', data: '0x4d6ed8c4' + pad(toHex(tokenId)) });
+      attempts.push({ sel: 'rewards(id)', data: '0xf301af42' + pad(toHex(tokenId)) });
       let earnedResult = null;
-      let lastErr = null;
-      for (const earnedData of attempts) {
-        try { earnedResult = await ethCall(gaugeAddress, earnedData); break; }
-        catch (e) { lastErr = e; }
+      let usedSel = null;
+      const errs = [];
+      for (const a of attempts) {
+        try { earnedResult = await ethCall(gaugeAddress, a.data); usedSel = a.sel; break; }
+        catch (e) { errs.push(`${a.sel}: ${e.message}`); }
       }
-      if (earnedResult === null) throw (lastErr || new Error('earned() semua variant revert'));
+      if (earnedResult === null) throw new Error('Semua variant earned/rewards revert: ' + errs.join(' | '));
       const earnedWei = hex2BN(earnedResult);
       aeroEarned = Number(earnedWei) / 1e18;
       // Lookup reward token via gauge.rewardToken() (paling akurat).
