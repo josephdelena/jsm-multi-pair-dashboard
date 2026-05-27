@@ -224,6 +224,46 @@ async function scanTransfersFromWalletTo(npmAddress, fromWallet, toAddress) {
   return Array.from(tokenIds);
 }
 
+// ── Scan ERC721 Transfer log NPM untuk cari depositor asli sebuah tokenId ──
+// Aerodrome SlipStream CL gauge.earned(address,uint256) revert "NA" kalau address
+// bukan depositor yg tercatat di gauge (kasus umum: NFT deposit via router/aggregator
+// → depositor = router address, bukan wallet user). Resolve by scan Transfer
+// event where to=gauge, tokenId=match → ambil `from` (= depositor asli).
+async function resolveDepositorFromTransferLog(npmAddress, tokenId, gaugeAddress) {
+  if (!npmAddress || !gaugeAddress) return null;
+  const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const toTopic = '0x' + pad(gaugeAddress.replace('0x','').toLowerCase());
+  const tokenIdTopic = '0x' + pad(toHex(tokenId));
+  const latestHex = await rpcCall('eth_blockNumber', []);
+  const latest = parseInt(latestHex, 16);
+  let cursor = latest;
+  let chunkSize = 500_000;
+  const MIN_CHUNK = 25_000;
+  const FLOOR = Math.max(0, latest - 6_000_000); // ~4 bulan di Base
+  while (cursor > FLOOR) {
+    const toBlk = cursor;
+    const fromBlk = Math.max(FLOOR, cursor - chunkSize + 1);
+    try {
+      const logs = await rpcCall('eth_getLogs', [{
+        address: npmAddress,
+        topics: [TRANSFER_TOPIC, null, toTopic, tokenIdTopic],
+        fromBlock: '0x' + fromBlk.toString(16),
+        toBlock: '0x' + toBlk.toString(16)
+      }]);
+      if (logs && logs.length) {
+        // Pakai log paling baru (stake terakhir)
+        const log = logs[logs.length - 1];
+        if (log.topics[1]) return '0x' + log.topics[1].slice(-40);
+      }
+      cursor = fromBlk - 1;
+    } catch (e) {
+      if (chunkSize > MIN_CHUNK) { chunkSize = Math.max(MIN_CHUNK, Math.floor(chunkSize / 2)); continue; }
+      cursor = fromBlk - 1;
+    }
+  }
+  return null;
+}
+
 // ── Gauge.rewardToken() → token address (paling akurat) ──
 async function resolveRewardToken(gaugeAddress) {
   if (!gaugeAddress) return null;
@@ -996,16 +1036,15 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
     } catch (e) { aeroEarned = { error: e.message }; }
   } else if (gaugeAddress) {
     try {
-      // Build attempt list — gauge implementations beda-beda:
-      // 1) earned(address,uint256) — Velo/Aero standard, revert "NA" kalau wallet bukan depositor asli
-      // 2) earned(uint256) — variant tokenId-only
-      // 3) rewards(uint256) — public mapping getter di Aerodrome SlipStream, never revert (return 0)
-      //    Note: rewards() cuma kasih checkpointed accrual; mungkin lebih kecil dari UI realtime,
-      //    tapi tetap lebih baik daripada blank "—"
+      // Build attempt list — Aerodrome SlipStream gauge.earned(address,uint256) revert "NA"
+      // kalau alamat bukan depositor asli. NFT yg di-deposit via router → depositor = router.
+      // Step 1: coba pakai wallet user. Step 2: kalau gagal, scan log buat resolve depositor asli
+      // dan retry. Step 3: fallback ke earned(uint256). Step 4: rewards(uint256) (checkpointed).
+      const earnedAddrId = (addr) => '0x3e491d47' + pad(addr.replace('0x','').toLowerCase()) + pad(toHex(tokenId));
       const attempts = [];
-      if (walletAddress) {
-        attempts.push({ sel: 'earned(addr,id)', data: '0x3e491d47' + pad(walletAddress.replace('0x','').toLowerCase()) + pad(toHex(tokenId)) });
-      }
+      if (walletAddress) attempts.push({ sel: `earned(${walletAddress.slice(0,10)},id)`, data: earnedAddrId(walletAddress) });
+      // Placeholder — diisi di-runtime kalau perlu resolve depositor
+      let depositorResolved = null;
       attempts.push({ sel: 'earned(id)', data: '0x4d6ed8c4' + pad(toHex(tokenId)) });
       attempts.push({ sel: 'rewards(id)', data: '0xf301af42' + pad(toHex(tokenId)) });
       let earnedResult = null;
@@ -1014,6 +1053,19 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
       for (const a of attempts) {
         try { earnedResult = await ethCall(gaugeAddress, a.data); usedSel = a.sel; break; }
         catch (e) { errs.push(`${a.sel}: ${e.message}`); }
+      }
+      // Kalau semua revert atau kita cuma dapet rewards(id) yg checkpointed (sering 0),
+      // resolve depositor asli via Transfer log lalu retry earned(addr,id).
+      const earnedZero = earnedResult && /^0x0+$/.test(earnedResult.replace('0x',''));
+      if (earnedResult === null || (usedSel === 'rewards(id)' && earnedZero)) {
+        try {
+          depositorResolved = await resolveDepositorFromTransferLog(npmAddress, tokenId, gaugeAddress);
+          if (depositorResolved && depositorResolved.toLowerCase() !== (walletAddress || '').toLowerCase()) {
+            const r = await ethCall(gaugeAddress, earnedAddrId(depositorResolved));
+            earnedResult = r;
+            usedSel = `earned(depositor:${depositorResolved.slice(0,10)},id)`;
+          }
+        } catch (e) { errs.push(`earned(depositor,id): ${e.message}`); }
       }
       if (earnedResult === null) throw new Error('Semua variant earned/rewards revert: ' + errs.join(' | '));
       const earnedWei = hex2BN(earnedResult);
