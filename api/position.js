@@ -1005,6 +1005,7 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
 
   let aeroEarned = null;
   let rewardSymbol = null, rewardPriceUsd = null, rewardUsd = null;
+  const _emDiag = { usedSel: null, errs: [], depositorResolved: null, scanRan: false };
 
   // Cek apakah NFT di-stake di MasterChef (PancakeSwap V3) — pakai pendingCake(tokenId) instead of earned()
   let masterchefStaked = null;
@@ -1043,31 +1044,32 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
       const earnedAddrId = (addr) => '0x3e491d47' + pad(addr.replace('0x','').toLowerCase()) + pad(toHex(tokenId));
       const attempts = [];
       if (walletAddress) attempts.push({ sel: `earned(${walletAddress.slice(0,10)},id)`, data: earnedAddrId(walletAddress) });
-      // Placeholder — diisi di-runtime kalau perlu resolve depositor
-      let depositorResolved = null;
       attempts.push({ sel: 'earned(id)', data: '0x4d6ed8c4' + pad(toHex(tokenId)) });
       attempts.push({ sel: 'rewards(id)', data: '0xf301af42' + pad(toHex(tokenId)) });
       let earnedResult = null;
-      let usedSel = null;
-      const errs = [];
       for (const a of attempts) {
-        try { earnedResult = await ethCall(gaugeAddress, a.data); usedSel = a.sel; break; }
-        catch (e) { errs.push(`${a.sel}: ${e.message}`); }
+        try { earnedResult = await ethCall(gaugeAddress, a.data); _emDiag.usedSel = a.sel; break; }
+        catch (e) { _emDiag.errs.push(`${a.sel}: ${e.message}`); }
       }
       // Kalau semua revert atau kita cuma dapet rewards(id) yg checkpointed (sering 0),
       // resolve depositor asli via Transfer log lalu retry earned(addr,id).
       const earnedZero = earnedResult && /^0x0+$/.test(earnedResult.replace('0x',''));
-      if (earnedResult === null || (usedSel === 'rewards(id)' && earnedZero)) {
+      if (earnedResult === null || (_emDiag.usedSel === 'rewards(id)' && earnedZero)) {
         try {
-          depositorResolved = await resolveDepositorFromTransferLog(npmAddress, tokenId, gaugeAddress);
-          if (depositorResolved && depositorResolved.toLowerCase() !== (walletAddress || '').toLowerCase()) {
-            const r = await ethCall(gaugeAddress, earnedAddrId(depositorResolved));
+          _emDiag.depositorResolved = await resolveDepositorFromTransferLog(npmAddress, tokenId, gaugeAddress);
+          _emDiag.scanRan = true;
+          if (_emDiag.depositorResolved && _emDiag.depositorResolved.toLowerCase() !== (walletAddress || '').toLowerCase()) {
+            const r = await ethCall(gaugeAddress, earnedAddrId(_emDiag.depositorResolved));
             earnedResult = r;
-            usedSel = `earned(depositor:${depositorResolved.slice(0,10)},id)`;
+            _emDiag.usedSel = `earned(depositor:${_emDiag.depositorResolved.slice(0,10)},id)`;
+          } else if (_emDiag.depositorResolved) {
+            _emDiag.errs.push(`depositorResolved=${_emDiag.depositorResolved} == wallet, skip retry`);
+          } else {
+            _emDiag.errs.push('Transfer log scan: no logs found in ~4mo window');
           }
-        } catch (e) { errs.push(`earned(depositor,id): ${e.message}`); }
+        } catch (e) { _emDiag.errs.push(`scan/retry exception: ${e.message}`); }
       }
-      if (earnedResult === null) throw new Error('Semua variant earned/rewards revert: ' + errs.join(' | '));
+      if (earnedResult === null) throw new Error('Semua variant earned/rewards revert: ' + _emDiag.errs.join(' | '));
       const earnedWei = hex2BN(earnedResult);
       aeroEarned = Number(earnedWei) / 1e18;
       // Lookup reward token via gauge.rewardToken() (paling akurat).
@@ -1118,6 +1120,7 @@ async function readFullPosition(npmAddress, tokenId, poolAddress, gaugeAddress, 
     rewardAmount: (typeof aeroEarned === 'number') ? aeroEarned : null,
     rewardPriceUsd,
     rewardUsd,
+    _emDiag,
     originalDeposit,
     raw: {
       amount0_wei: Math.floor(amount0).toString(),
